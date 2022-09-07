@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from draw_box_utils import *
 from lxml import etree
 from PIL import Image
 import json
@@ -87,12 +88,6 @@ class Object_dataset(Dataset):
 
 
 
-
-
-
-
-
-
     def split_data(self,train_ratio=0.5):
         xml_files=os.listdir(self.annotations_path)
         xml_files_num=len(xml_files)
@@ -132,9 +127,17 @@ train_=Object_dataset()
 #     dataset=train_,batch_size=2,shuffle=False,num_workers=0,drop_last=True
 # )  每张图片尺寸不一致，会报错
 
+category_index={}
+with open('pascal_voc_classes.json') as f:
+    ci=json.load(f)
+    category_index={str(v):str(k) for k,v in ci.items()}
+
 for index in random.sample(range(0,len(train_)),k=4):
     img,tar=train_[index]
+
+    img=draw_box_and_mask(img,tar['boxes'].numpy(),0,np.ones(tar['boxes'].shape[0]),0.5,0.5,tar['labels'],category_index=category_index)
     plt.imshow(img)
     plt.show()
+
     c=1
 
