@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import transform
 from draw_box_utils import *
 from lxml import etree
 from PIL import Image
@@ -9,6 +10,8 @@ from torch.utils.data import Dataset
 import random
 import torch.utils.data as Data
 import numpy as np
+from transforms3 import *
+from torchvision.transforms import functional as F
 
 random.seed(5)
 
@@ -122,7 +125,7 @@ class Object_dataset(Dataset):
         return {xml.tag:result}
 
 
-train_=Object_dataset()
+train_=Object_dataset(transforms=data_transforms['train'])
 # train_set=Data.DataLoader(
 #     dataset=train_,batch_size=2,shuffle=False,num_workers=0,drop_last=True
 # )  每张图片尺寸不一致，会报错
@@ -134,6 +137,9 @@ with open('pascal_voc_classes.json') as f:
 
 for index in random.sample(range(0,len(train_)),k=4):
     img,tar=train_[index]
+    img,tar=transform.GeneralizedRCNNTransform(400,300,[0],[1])([img],[tar])
+    img,tar=img[0],tar[0]
+    img=F.to_pil_image(img)
 
     img=draw_box_and_mask(img,tar['boxes'].numpy(),0,np.ones(tar['boxes'].shape[0]),0.5,0.5,tar['labels'],category_index=category_index)
     plt.imshow(img)

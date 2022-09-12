@@ -3,6 +3,7 @@ import PIL.ImageFont as ImageFont
 from PIL import ImageDraw,ImageColor
 from PIL import Image
 import numpy as np
+from torchvision.transforms import functional as F
 
 STANDARD_COLORS = [
     'AliceBlue', 'Chartreuse', 'Aqua', 'Aquamarine', 'Azure', 'Beige', 'Bisque',
