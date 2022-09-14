@@ -61,9 +61,21 @@ class to_batch_images(object):
         return batch_images
 
 class Imagelist(object):
-    def __init__(self,batch_imgs,resized_sizes):
+    def __init__(self,batch_imgs,resized_sizes,origin_size):
         self.batch_imgs=batch_imgs
         self.resized_sizes=resized_sizes
+        self.origin_size=origin_size
+
+class postprocess(object):
+    def __call__(self, result,image_shapes,origin_shapes):
+        if self.training:
+            return result
+        for i,(pred,image_shape,origin_shape) in enumerate(zip(result,image_shapes,origin_shapes)):
+            boxes=pred['boxes']
+            boxes=resize_boxes(image_shape,origin_shape)(boxes)
+            result[i]['boxes']=boxes
+        return result
+
 
 
 class GeneralizedRCNNTransform(nn.Module):
@@ -76,7 +88,9 @@ class GeneralizedRCNNTransform(nn.Module):
         self.image_mean = torch.as_tensor(image_mean)  # 指定图像在标准化处理中的均值,传入一个列表
         self.image_std = torch.as_tensor(image_std)  # 指定图像在标准化处理中的方差
     def forward(self,images,targets):  #images是列表不是batch
+        original_sizes=[]
         for i,img in enumerate(images):
+            original_sizes.append((img.shape[-2],img.shape[-1]))
 
             img=normalize(self.image_mean,self.image_std)(img)
             origin_size=img.shape[-2:]
@@ -98,7 +112,7 @@ class GeneralizedRCNNTransform(nn.Module):
         for image_size in image_sizes:
             image_sizes_list.append((image_size[0],image_size[1]))
 
-        image_list=Imagelist(batch_images,image_sizes_list)
+        image_list=Imagelist(batch_images,image_sizes_list,original_sizes)
         return image_list,targets
 
 
