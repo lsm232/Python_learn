@@ -3,7 +3,6 @@
   <component name="ChangeListManager">
     <list default="true" id="f004c75b-21d6-4ab9-ae91-559337684019" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/rpn_function.py" beforeDir="false" afterPath="$PROJECT_DIR$/rpn_function.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -30,7 +29,7 @@
   <component name="PropertiesComponent">
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="WebServerToolWindowFactoryState" value="true" />
-    <property name="last_opened_file_path" value="J:/lsm_codes/faster_rcnn/faster_rcnn" />
+    <property name="last_opened_file_path" value="H:/ex2080_liao/CT2_pretrain" />
     <property name="settings.editor.selected.configurable" value="pyconsole" />
   </component>
   <component name="PyConsoleOptionsProvider">
@@ -123,6 +122,8 @@
       <updated>1662367114704</updated>
       <workItem from="1662367145051" duration="47008000" />
       <workItem from="1662876732195" duration="54347000" />
+      <workItem from="1663331063061" duration="576000" />
+      <workItem from="1663383604837" duration="48000" />
     </task>
     <servers />
   </component>
@@ -134,10 +135,10 @@
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
     <state x="690" y="266" key="#com.intellij.refactoring.safeDelete.UnsafeUsagesDialog/0.0.1920.1040/-1280.-109.1280.984@0.0.1920.1040" timestamp="1662453101543" />
-    <state x="740" y="275" key="FileChooserDialogImpl" timestamp="1662876887431">
+    <state x="740" y="275" key="FileChooserDialogImpl" timestamp="1663383657473">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state x="740" y="275" key="FileChooserDialogImpl/0.0.1920.1040/-1280.-109.1280.984@0.0.1920.1040" timestamp="1662876887431" />
+    <state x="740" y="275" key="FileChooserDialogImpl/0.0.1920.1040/-1280.-109.1280.984@0.0.1920.1040" timestamp="1663383657473" />
     <state width="1877" height="348" key="GridCell.Tab.0.bottom" timestamp="1662975001297">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
@@ -178,6 +179,10 @@
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
     <state width="968" height="528" key="XDebugger.FullValuePopup/0.0.1920.1040/-1280.-109.1280.984@0.0.1920.1040" timestamp="1662462490555" />
+    <state x="640" y="344" key="com.intellij.ide.util.TipDialog" timestamp="1663383612656">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state x="640" y="344" key="com.intellij.ide.util.TipDialog/0.0.1920.1040/-1280.-109.1280.984@0.0.1920.1040" timestamp="1663383612656" />
     <state x="623" y="225" width="672" height="678" key="search.everywhere.popup" timestamp="1662442099660">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>

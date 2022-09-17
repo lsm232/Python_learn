@@ -94,7 +94,13 @@ class RPNHead(nn.Module):
             bbox_reg.append(self.bbox_pred(t))
         return logits, bbox_reg
 
+class RegionProposoalNetwork(nn.Module):
+    def __init__(self):
+        super(RegionProposoalNetwork, self).__init__()
 
+
+    def forward(self,imagelist,features,targets):
+        features=
 
 
 
