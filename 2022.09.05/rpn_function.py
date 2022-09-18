@@ -2,6 +2,7 @@ import torch
 from typing import List,Tuple,Dict
 from torch import Tensor
 import torch.nn as nn
+from .det_utils import *
 
 class AnchorGenerator(nn.Module):
     def __init__(self,sizes,aspect_ratios):
@@ -94,13 +95,68 @@ class RPNHead(nn.Module):
             bbox_reg.append(self.bbox_pred(t))
         return logits, bbox_reg
 
+def concat_box_prediction_layers(box_cls,box_regression):
+    box_cls_flatten=[]
+    box_regression_flatten=[]
+    for box_cls_per_level,box_regression_per_level in zip(box_cls,box_regression):
+        N, AxC, H, W = box_cls_per_level.shape
+        # # [batch_size, anchors_num_per_position * 4, height, width]
+        Ax4 = box_regression_per_level.shape[1]
+        A = Ax4 // 4
+        # classes_num
+        C = AxC // A
+        box_cls_per_level=box_cls_per_level.reshape(N,-1,C,H,W)
+        box_cls_per_level=box_cls_per_level.permute(0,3,4,1,2)
+        box_cls_per_level=box_cls_per_level.reshape(N,-1,C)
+        box_regression = box_regression.reshape(N, -1, 4, H, W)
+        box_regression = box_regression.permute(0, 3, 4, 1, 2)
+        box_regression = box_regression.reshape(N, -1, 4)
+        box_cls_flatten.append(box_cls_per_level)
+        box_regression_flatten.append(box_regression_per_level)
+    box_cls=torch.cat(box_cls_flatten,dim=1).flatten(0,-2)
+    box_regression = torch.cat(box_regression_flatten, dim=1).reshape(-1, 4)
+    return box_cls, box_regression
+
+
+
+
+
 class RegionProposoalNetwork(nn.Module):
-    def __init__(self):
+    def __init__(self,anchorsGenerator,weights):
         super(RegionProposoalNetwork, self).__init__()
+
+        self.anchorsGenerator=anchorsGenerator
+        self.box_coder=BoxCoder(weights)
+
+
+    def filter_proposals(self,proposals,objectness,image_shapes,num_anchors_per_level):
+        num_imgs=proposals.shape[0]
+        objectness=objectness.detach()
+
+        objectness=objectness.reshape(num_imgs,-1)
+
+        levels=[torch.full((num_anchors,),idx )]
+
+
+
 
 
     def forward(self,imagelist,features,targets):
-        features=
+        features=list(features.values())
+        objectness,pred_bbox_deltas=self.head(features)  #list[[b,num_anchors*1,h,w],...]   list[[b,num_anchors*4,h,w],...]
+        anchors=self.anchorsGenerator(imagelist,features)  #list[(num_anchors*h1*w1+num_anchors*h2*w2...,4),()]
+        num_images=len(anchors)
+
+        num_anchors_per_level=[o.shape[1]*o.shape[2]*o.shape[3] for o in objectness]  #[int ,int ,...]
+        objectness,pred_bbox_deltas=concat_box_prediction_layers(objectness,pred_bbox_deltas)  #[nums,1],[nums,4]
+        proposals=self.box_coder.decode(pred_bbox_deltas.detach(),anchors)
+        proposals=proposals.reshape(num_images,-1,4)
+
+        boxes,scores=self.filter_proposals(proposals,objectness,imagelist.image_list,num_anchors_per_level)
+
+
+
+
 
 
 
