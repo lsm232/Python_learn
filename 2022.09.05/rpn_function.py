@@ -122,11 +122,65 @@ def concat_box_prediction_layers(box_cls,box_regression):
 
 
 class RegionProposoalNetwork(nn.Module):
-    def __init__(self,anchorsGenerator,weights):
+    def __init__(self,anchorsGenerator,weights,nms_thresh,fg_iou_thresh,bg_iou_thresh):
         super(RegionProposoalNetwork, self).__init__()
 
         self.anchorsGenerator=anchorsGenerator
         self.box_coder=BoxCoder(weights)
+        self.nms_thresh=nms_thresh
+        self.proposal_matcher = Matcher(
+            fg_iou_thresh,  # 当iou大于fg_iou_thresh(0.7)时视为正样本
+            bg_iou_thresh,  # 当iou小于bg_iou_thresh(0.3)时视为负样本
+            allow_low_quality_matches=True
+        )
+
+    def post_nms_top_n(self):
+        if self.training:
+            return self._post_nms_top_n['training']
+        return self._post_nms_top_n['testing']
+    def pre_nms_top_n(self):
+        if self.istraining:
+            return self._pre_nms_top_n['training']
+        return self._pre_nms_top_n['testing']
+
+    def get_top_n_idx(self,objectness,num_anchors_per_level):
+        r=[]
+        offset=0
+        for ob in objectness.split(num_anchors_per_level,dim=1):
+            num_anchors=ob.shape[1]
+            pre_nms_top_n=min(self.pre_nms_top_n(),num_anchors)
+            _,top_n_idx=ob.topk(pre_nms_top_n,dim=1)
+            r.append(top_n_idx+offset)
+            offset+=num_anchors
+        return torch.cat(r,dim=1)
+
+    def clip_boxes_to_image(self, boxes, shape):
+        dim=boxes.dim()
+        boxes_x=boxes[:,0::2]
+        boxes_y = boxes[:, 1::2]
+        height,width=shape
+
+        boxes_x=boxes_x.clamp(min=0,max=width)
+        boxes_y=boxes_y.clamp(min=0,max=height)
+        clipped_boxes=torch.stack((boxes_x,boxes_y),dim)
+        return clipped_boxes.reshape(boxes.shape)
+
+    def remove_small_boxes(self,boxes,min_size):
+        ws, hs = boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1]
+        keep=torch.logical_and(torch.ge(ws,min_size),torch.ge(hs,min_size))
+
+        keep = torch.where(keep)[0]
+        return keep
+
+    def batched_nms(self,boxes,scores,lvl,nms_thresh):
+        max_coordinate=boxes.max()
+        offsets=lvl*(max_coordinate+1)
+        boxes_for_nms=boxes+offsets[:,None]
+        keep=torch.ops.torchvision.nms(boxes,scores,nms_thresh)
+        return keep
+
+
+
 
 
     def filter_proposals(self,proposals,objectness,image_shapes,num_anchors_per_level):
@@ -135,7 +189,66 @@ class RegionProposoalNetwork(nn.Module):
 
         objectness=objectness.reshape(num_imgs,-1)
 
-        levels=[torch.full((num_anchors,),idx )]
+        levels=[torch.full((num_anchors,),idx,dtype=torch.int32) for idx,num_anchors in enumerate(num_anchors_per_level)]
+        levels=torch.cat(levels,dim=0)
+        levels=levels.reshape(1,-1).expand_as(objectness)
+
+        top_n_idx=self.get_top_n_idx(objectness,num_anchors_per_level)
+        image_range=torch.arange[num_imgs]
+        batch_idx=image_range[:,None]
+
+        objectness=objectness[batch_idx,top_n_idx]
+        levels=levels[batch_idx,top_n_idx]
+        proposals=proposals[batch_idx,top_n_idx]
+
+        objectness_prob=torch.sigmoid(objectness)
+        final_boxes=[]
+        final_scores=[]
+        for boxes,scores,lvl,img_shape in zip(proposals,objectness,levels,image_shapes):
+            boxes=self.clip_boxes_to_image(boxes,image_shapes)
+            keep=self.remove_small_boxes(boxes,min_size=self.min_size)
+            boxes,scores,lvl=boxes[keep],scores[keep],lvl[keep]
+            keep=self.batched_nms(boxes,scores,lvl,self.num_thresh)
+            keep = keep[: self.post_nms_top_n()]
+            boxes, scores = boxes[keep], scores[keep]
+
+            final_boxes.append(boxes)
+            final_scores.append(scores)
+        return final_boxes, final_scores
+
+    def box_iou(self,gt_boxes,anchors_per_image):
+        area1=(gt_boxes[:,2]-gt_boxes[:,0])*(gt_boxes[:, 3] - gt_boxes[:, 1])
+        area2=(anchors_per_image[:,2]-anchors_per_image[:,0])*(anchors_per_image[:, 3] - anchors_per_image[:, 1])
+        lt=torch.max(gt_boxes[:,None,:2],anchors_per_image[:,:2])
+        rb=torch.max(gt_boxes[:,None,2:],anchors_per_image[:,2:])
+        wh = (rb - lt).clamp(min=0)  # [N,M,2]
+        inter = wh[:, :, 0] * wh[:, :, 1]  # [N,M]
+
+        iou = inter / (area1[:, None] + area2 - inter)
+        return iou
+
+
+
+
+
+
+
+
+    def assign_targets_to_anchors(self,anchors,targets):
+        labels=[]
+        matched_gt_boxes=[]
+        for anchors_per_image,targets_per_image in zip(anchors,targets):
+            gt_boxes=targets['boxes']
+            if gt_boxes.numel()==0:
+                matched_gt_boxes_per_image=torch.zeros(anchors_per_image)
+                labels_per_image=torch.zeros((anchors_per_image.shape[0]))
+            else:
+                match_quality_matrix=self.box_iou(gt_boxes,anchors_per_image)
+                matched_idxs = self.proposal_matcher(match_quality_matrix)
+
+
+
+
 
 
 
@@ -153,6 +266,10 @@ class RegionProposoalNetwork(nn.Module):
         proposals=proposals.reshape(num_images,-1,4)
 
         boxes,scores=self.filter_proposals(proposals,objectness,imagelist.image_list,num_anchors_per_level)
+        losses={}
+        if self.training:
+            labels,matched_gt_boxes=self.assign_targets_to_anchors(anchors, targets)
+
 
 
 
