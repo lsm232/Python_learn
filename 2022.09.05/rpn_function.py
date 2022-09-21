@@ -216,16 +216,22 @@ class RegionProposoalNetwork(nn.Module):
             final_scores.append(scores)
         return final_boxes, final_scores
 
-    def box_iou(self,gt_boxes,anchors_per_image):
-        area1=(gt_boxes[:,2]-gt_boxes[:,0])*(gt_boxes[:, 3] - gt_boxes[:, 1])
-        area2=(anchors_per_image[:,2]-anchors_per_image[:,0])*(anchors_per_image[:, 3] - anchors_per_image[:, 1])
-        lt=torch.max(gt_boxes[:,None,:2],anchors_per_image[:,:2])
-        rb=torch.max(gt_boxes[:,None,2:],anchors_per_image[:,2:])
-        wh = (rb - lt).clamp(min=0)  # [N,M,2]
-        inter = wh[:, :, 0] * wh[:, :, 1]  # [N,M]
+    def calculate_area(self,box):
+        width=box[:,-2]-box[:,0]
+        height=box[:,-1]-box[:,1]
+        return width*height
 
-        iou = inter / (area1[:, None] + area2 - inter)
+    def box_iou(self,gt_boxes,anchors_per_image):
+        gt_area=self.calculate_area(gt_boxes)
+        anchors_area=self.calculate_area(anchors_per_image)
+        lt=torch.max(gt_boxes[:,None,:2],anchors_per_image[:,:2])
+        rb=torch.min(gt_boxes[:,None,2:],anchors_per_image[:,2:])
+        wh=(rb-lt).clamp(min=0)
+        inter=wh[:,:,0]*wh[:,:,1]
+        iou=inter/(gt_area[:,None]+anchors_area-inter)
         return iou
+
+
 
 
 
@@ -239,12 +245,15 @@ class RegionProposoalNetwork(nn.Module):
         matched_gt_boxes=[]
         for anchors_per_image,targets_per_image in zip(anchors,targets):
             gt_boxes=targets['boxes']
-            if gt_boxes.numel()==0:
-                matched_gt_boxes_per_image=torch.zeros(anchors_per_image)
-                labels_per_image=torch.zeros((anchors_per_image.shape[0]))
-            else:
-                match_quality_matrix=self.box_iou(gt_boxes,anchors_per_image)
-                matched_idxs = self.proposal_matcher(match_quality_matrix)
+            match_quality_matrix=self.box_iou(gt_boxes,anchors_per_image)
+            matched_idxs = self.proposal_matcher(match_quality_matrix)
+            matched_gt_boxes_per_image=gt_boxes[matched_idxs.clamp(0)]
+            labels_per_image=matched_idxs>=0
+            labels_per_image=labels_per_image.to(dtype=torch.float32)
+
+            bg_indices=matched_idxs
+
+
 
 
 
