@@ -20,64 +20,25 @@ class BalancedPositiveNegativeSampler(object):
         self.positive_fraction = positive_fraction
 
     def __call__(self, matched_idxs):
-        # type: (List[Tensor]) -> Tuple[List[Tensor], List[Tensor]]
-        """
-        Arguments:
-            matched idxs: list of tensors containing -1, 0 or positive values.
-                Each tensor corresponds to a specific image.
-                -1 values are ignored, 0 are considered as negatives and > 0 as
-                positives.
-
-        Returns:
-            pos_idx (list[tensor])
-            neg_idx (list[tensor])
-
-        Returns two lists of binary masks for each image.
-        The first list contains the positive elements that were selected,
-        and the second list the negative example.
-        """
-        pos_idx = []
-        neg_idx = []
-        # 遍历每张图像的matched_idxs
+        pos_idx=[]
+        neg_idx=[]
         for matched_idxs_per_image in matched_idxs:
-            # >= 1的为正样本, nonzero返回非零元素索引
-            # positive = torch.nonzero(matched_idxs_per_image >= 1).squeeze(1)
-            positive = torch.where(torch.ge(matched_idxs_per_image, 1))[0]
-            # = 0的为负样本
-            # negative = torch.nonzero(matched_idxs_per_image == 0).squeeze(1)
-            negative = torch.where(torch.eq(matched_idxs_per_image, 0))[0]
-
-            # 指定正样本的数量
-            num_pos = int(self.batch_size_per_image * self.positive_fraction)
-            # protect against not enough positive examples
-            # 如果正样本数量不够就直接采用所有正样本
-            num_pos = min(positive.numel(), num_pos)
-            # 指定负样本数量
-            num_neg = self.batch_size_per_image - num_pos
-            # protect against not enough negative examples
-            # 如果负样本数量不够就直接采用所有负样本
+            positive=torch.where(torch.ge(matched_idxs_per_image,1))[0]
+            negative=torch.where(torch.ge(matched_idxs_per_image,0))[0]
+            num_pos=int(self.batch_size_per_image*self.positive_fraction)
+            num_pos=min(positive.numel(),num_pos)
+            num_neg=self.batch_size_per_image-num_pos
             num_neg = min(negative.numel(), num_neg)
-
-            # randomly select positive and negative examples
-            # Returns a random permutation of integers from 0 to n - 1.
-            # 随机选择指定数量的正负样本
-            perm1 = torch.randperm(positive.numel(), device=positive.device)[:num_pos]
-            perm2 = torch.randperm(negative.numel(), device=negative.device)[:num_neg]
-
+            perm1=torch.randperm(positive.numel())[:num_pos]
+            perm2=torch.randperm(negative.numel())[:num_neg]
             pos_idx_per_image = positive[perm1]
             neg_idx_per_image = negative[perm2]
-
-            # create binary mask from indices
-            pos_idx_per_image_mask = torch.zeros_like(
-                matched_idxs_per_image, dtype=torch.uint8
-            )
+            pos_idx_per_image_mask=torch.zeros_like(matched_idxs_per_image,dtype=torch.uint8)
             neg_idx_per_image_mask = torch.zeros_like(
                 matched_idxs_per_image, dtype=torch.uint8
             )
-
             pos_idx_per_image_mask[pos_idx_per_image] = 1
             neg_idx_per_image_mask[neg_idx_per_image] = 1
-
             pos_idx.append(pos_idx_per_image_mask)
             neg_idx.append(neg_idx_per_image_mask)
 

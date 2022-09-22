@@ -3,13 +3,15 @@ from typing import List,Tuple,Dict
 from torch import Tensor
 import torch.nn as nn
 from .det_utils import *
+import torch.nn.functional as F
 
 class AnchorGenerator(nn.Module):
-    def __init__(self,sizes,aspect_ratios):
+    def __init__(self,sizes,aspect_ratios,batch_size_per_image,positive_fraction):
         super(AnchorGenerator, self).__init__()
         self.sizes=sizes   #((64,),(128,),(256,))
         self.aspect_ratios=aspect_ratios   #(0.5,1,2)
         self._cache={}
+        self.fg_bg_sampler=BalancedPositiveNegativeSampler(batch_size_per_image, positive_fraction)
 
     def gird_anchors(self,grid_sizes,strides):
         #type: (List[List[int]],List[List[Tensor]]) -> List[Tensor]
@@ -118,11 +120,8 @@ def concat_box_prediction_layers(box_cls,box_regression):
     return box_cls, box_regression
 
 
-
-
-
 class RegionProposoalNetwork(nn.Module):
-    def __init__(self,anchorsGenerator,weights,nms_thresh,fg_iou_thresh,bg_iou_thresh):
+    def __init__(self,anchorsGenerator,weights,nms_thresh,fg_iou_thresh,bg_iou_thresh,batch_size_per_image,positive_fraction):
         super(RegionProposoalNetwork, self).__init__()
 
         self.anchorsGenerator=anchorsGenerator
@@ -133,6 +132,7 @@ class RegionProposoalNetwork(nn.Module):
             bg_iou_thresh,  # 当iou小于bg_iou_thresh(0.3)时视为负样本
             allow_low_quality_matches=True
         )
+        self.fg_bg_sampler=BalancedPositiveNegativeSampler(batch_size_per_image,positive_fraction)
 
     def post_nms_top_n(self):
         if self.training:
@@ -178,10 +178,6 @@ class RegionProposoalNetwork(nn.Module):
         boxes_for_nms=boxes+offsets[:,None]
         keep=torch.ops.torchvision.nms(boxes,scores,nms_thresh)
         return keep
-
-
-
-
 
     def filter_proposals(self,proposals,objectness,image_shapes,num_anchors_per_level):
         num_imgs=proposals.shape[0]
@@ -231,15 +227,6 @@ class RegionProposoalNetwork(nn.Module):
         iou=inter/(gt_area[:,None]+anchors_area-inter)
         return iou
 
-
-
-
-
-
-
-
-
-
     def assign_targets_to_anchors(self,anchors,targets):
         labels=[]
         matched_gt_boxes=[]
@@ -251,14 +238,25 @@ class RegionProposoalNetwork(nn.Module):
             labels_per_image=matched_idxs>=0
             labels_per_image=labels_per_image.to(dtype=torch.float32)
 
-            bg_indices=matched_idxs
+            bg_indices=matched_idxs==self.proposal_matcher.BELOW_LOW_THRESHOLD
+            labels_per_image[bg_indices]=0.0
+            inds_to_discard = matched_idxs == self.proposal_matcher.BETWEEN_THRESHOLDS  # -2
+            labels_per_image[inds_to_discard] = -1.0
+            labels.append(labels_per_image)
+            matched_gt_boxes.append(matched_gt_boxes_per_image)
+            return labels,matched_gt_boxes
 
-
-
-
-
-
-
+    def compute_loss(self,objectness,pred_bbox_deltas,labels,regression_targets):
+        sampled_pos_inds,sampled_neg_inds=self.fg_bg_sampler(labels)
+        sampled_pos_inds=torch.where(torch.cat(sampled_pos_inds,dim=0))[0]
+        sampled_neg_inds=torch.where(torch.cat(sampled_neg_inds,dim=0))[0]
+        sampled_inds = torch.cat([sampled_pos_inds, sampled_neg_inds], dim=0)
+        objectness = objectness.flatten()
+        labels=torch.cat(labels,dim=0)
+        regression_targets = torch.cat(regression_targets, dim=0)
+        box_loss=smooth_l1_loss(pred_bbox_deltas[sampled_pos_inds],regression_targets[sampled_pos_inds],size_average=False)/(sampled_neg_inds.numel())
+        objectness_loss=F.cross_entropy(objectness[sampled_inds],labels[sampled_inds])
+        return objectness_loss,box_loss
 
 
 
@@ -278,6 +276,13 @@ class RegionProposoalNetwork(nn.Module):
         losses={}
         if self.training:
             labels,matched_gt_boxes=self.assign_targets_to_anchors(anchors, targets)
+            regression_targets=self.box_coder.encode(matched_gt_boxes,anchors)
+            loss_objectness,loss_rpn_box_reg=self.compute_loss(objectness,pred_bbox_deltas,labels,regression_targets)
+            losses = {
+                "loss_objectness": loss_objectness,
+                "loss_rpn_box_reg": loss_rpn_box_reg
+            }
+            return boxes, losses
 
 
 
