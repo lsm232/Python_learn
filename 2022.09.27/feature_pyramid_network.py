@@ -29,6 +29,56 @@ class IntermediateLayerGetter(nn.ModuleDict):
                 out[name]=x
         return out
 
+class FeaturePyramidNetwork(nn.Module):
+    def __init__(self,in_channels_list,out_channels,extra_blocks=None):
+        super(FeaturePyramidNetwork, self).__init__()
+        self.inner_blocks=nn.ModuleList()
+        self.layer_blocks=nn.ModuleList()
+
+        for in_channels in in_channels_list:
+            if in_channels==0:
+                continue
+            inner_module=nn.Conv2d(in_channels,out_channels,1)
+            layer_module=nn.Conv2d(out_channels,out_channels,3,padding=1)
+            self.inner_blocks.append(inner_module)
+            self.layer_blocks.append(layer_module)
+
+        for m in self.children():
+            if isinstance(m,nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight,a=1)
+                nn.init.constant_(m.bias,0)
+
+        self.extra_blocks=extra_blocks
+
+    def get_result_from_inner_blocks(self,x,idx):
+        num_blocks=len(self.inner_blocks)
+        i=0
+        out=x
+        if idx<0:
+            idx=num_blocks-idx
+        for module in self.inner_blocks:
+            if i==idx:
+                out=module(x)
+                return out
+
+            i+=1
+        return out
+
+    def get_result_from_layer_blocks(self,x,idx):
+        num_blocks=len(self.layer_blocks)
+        i=0
+        out=x
+        if idx<0:
+            idx=num_blocks-idx
+        for module in self.layer_blocks:
+            if i==idx:
+                out=module(x)
+                return out
+            i=i+1
+
+
+
+
 
 
 
