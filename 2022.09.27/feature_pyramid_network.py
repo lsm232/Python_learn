@@ -76,6 +76,37 @@ class FeaturePyramidNetwork(nn.Module):
                 return out
             i=i+1
 
+    def forward(self,feature_maps):
+        names=list(feature_maps.keys())
+        x=list(feature_maps.values())
+
+        last_inner=self.get_result_from_inner_blocks(x[-1],-1)  #将最后一个特征图的通道数调整为指定输出通道，即256
+        results=[]
+        results.append(self.get_result_from_layer_blocks(last_inner,-1))   #将调整通道后的特征图经一个3*3的卷积进行卷积
+        for idx in range(len(x)-2,-1,-1):  #从倒数第二个特征层-》2，1，对剩下的前三个特征图做处理
+            inner_lateral=self.get_result_from_inner_blocks(x[idx],idx)
+            feat_shape=inner_lateral.shape[-2:]
+            inner_top_down=F.interpolate(last_inner,size=feat_shape,mode='nearest')
+            last_inner=inner_top_down+inner_lateral
+            results.insert(0,self.get_result_from_layer_blocks(last_inner,idx))
+
+        if self.extra_blocks is not None:
+            results, names = self.extra_blocks(results, x, names)
+
+        out=OrderedDict([(k,v) for k,v in zip(names,results)])
+        return out
+
+
+
+
+
+
+
+
+
+        c=1
+
+
 
 
 

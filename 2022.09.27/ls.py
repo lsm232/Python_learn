@@ -1,3 +1,5 @@
-a=(1,2,3)
-a+=(4,4)
-c=1
+import copy
+import numpy as np
+
+
+a=np.arange(5)
