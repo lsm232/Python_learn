@@ -19,7 +19,7 @@ class IntermediateLayerGetter(nn.ModuleDict):
             if not return_layers:
                 break
 
-        super.__init__(layers)
+        super().__init__(layers)
         self.return_layers=original_return_layers
     def forward(self,x):
         out=OrderedDict()
@@ -95,20 +95,6 @@ class FeaturePyramidNetwork(nn.Module):
 
         out=OrderedDict([(k,v) for k,v in zip(names,results)])
         return out
-
-
-
-
-
-
-
-
-
-        c=1
-
-
-
-
 
 
 
