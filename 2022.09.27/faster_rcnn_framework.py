@@ -16,7 +16,14 @@ class TwoMLPHead(nn.Module):
         x=F.relu(self.fc7(x))
         return x
 
-class FasterRCNN(nn.Module):
+class FastRCNNPredictor(nn.Module):
+    def __init__(self,in_channels,num_classes):
+        super(FastRCNNPredictor, self).__init__()
+        self.cls_score=nn.Linear(in_channels,num_classes)  #对每一个box进行类别预测，包括背景
+        self.bbox_pred=nn.Linear(in_channels,num_classes*4)
+
+
+class FasterRCNN(FasterRCNNBase):
     def __init__(self,
                  backbone,
                  num_classes=None,
@@ -103,13 +110,25 @@ class FasterRCNN(nn.Module):
                 representation_size
             )
 
-        if
+        if box_predictor is None:
+            representation_size=1024
+            box_predictor=FastRCNNPredictor(
+                representation_size,
+                num_classes
+            )
 
+        roi_heads=RoIHeads(
+            box_roi_pool,box_head,box_predictor,
+            box_fg_iou_thresh,box_bg_iou_thresh,
+            box_batch_size_per_image,box_positive_fraction,
+            bbox_reg_weights,
+            box_score_thresh,box_nms_thresh,box_detections_per_image
+        )
 
+        if image_mean is None:
+            image_mean = [0.485, 0.456, 0.406]
+        if image_std is None:
+            image_std = [0.229, 0.224, 0.225]
 
-
-
-
-
-
+        transform=GeneralizedRCNNTransform(min_size, max_size, image_mean, image_std)
         super(FasterRCNN, self).__init__()
