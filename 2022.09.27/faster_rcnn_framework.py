@@ -16,6 +16,33 @@ class TwoMLPHead(nn.Module):
         x=F.relu(self.fc7(x))
         return x
 
+class FasterRCNNBase(nn.Module):
+    def __init__(self,backbone,rpn,roi_heads,transform):
+        super(FasterRCNNBase, self).__init__()
+        self.transform=transform
+        self.backbone=backbone
+        self.rpn=rpn
+        self.roi_heads=roi_heads
+        self._has_warned = False
+
+    def forward(self,images,targets):
+        if self.training and targets is None:
+            raise ValueError("no targets")
+        if self.traning:
+            for target in targets:
+                boxes=target["boxes"]
+
+        original_image_sizes=[]
+        for img in images:
+            h,w=img[:,-2:]
+            original_image_sizes.append((h,w))
+
+        images,taregts=self.transform(images,targets)
+
+
+
+
+
 class FastRCNNPredictor(nn.Module):
     def __init__(self,in_channels,num_classes):
         super(FastRCNNPredictor, self).__init__()

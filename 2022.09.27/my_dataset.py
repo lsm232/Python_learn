@@ -108,6 +108,9 @@ class VOCDataSet(Dataset):
                     result[child.tag]=[]
                 result[child.tag].append(child_result[child.tag])
         return {xml.tag:result}
+    @staticmethod
+    def collate_fn(batch):
+        return tuple(zip(*batch))
 
 
 
