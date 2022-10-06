@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torchvision.ops import MultiScaleRoIAlign
 import torch.nn.functional as F
+from collections import OrderedDict
 
 
 class TwoMLPHead(nn.Module):
@@ -38,6 +39,16 @@ class FasterRCNNBase(nn.Module):
             original_image_sizes.append((h,w))
 
         images,taregts=self.transform(images,targets)
+
+        features=self.backbone(images.pad_images)
+        if isinstance(features,torch.Tensor):
+            features=OrderedDict(['0',features])
+
+        proposals,proposal_losses=self.rpn(images,features,targets)
+
+
+
+
 
 
 
