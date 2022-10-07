@@ -72,6 +72,14 @@ class AnchorGenerator(nn.Module):
         self.set_cell_anchors()
 
         anchors_over_all_featrue_maps=self.cached_grid_anchors(grid_sizes,strides)
+        anchors=[]
+        for i,(img_height,img_width) in enumerate(image_list.resized_sizes):
+            anchors.append(anchors_over_all_featrue_maps)
+        anchors=[torch.cat(anchors_per_image) for anchors_per_image in anchors]
+        self._cache.clear()
+        return anchors
+
+
 
 
 
@@ -124,12 +132,119 @@ class RegionProposalNetwork(nn.Module):
         self.score_thresh = score_thresh
         self.min_size = 1.
 
+    def permute_and_flatten(self,layer,N,A,C,H,W):
+        layer=layer.reshape(N,A,C,H,W).permute(0,3,4,1,2)
+
+        layer = layer.reshape(N, -1, C)
+        return layer
+
+    def concat_box_prediction_layers(self,objectness,pred_bbox_deltas):
+        #[(b,3,h1,w1),(b,3,h2,w2),...],[(b,12,h1,w1),(b,12,h2,w2),...]
+        box_cls_flatten=[]
+        box_regression_flatten=[]
+        for box_cls_per_level,box_regression_per_level in zip(objectness,pred_bbox_deltas):
+            N,num_classxanchor,h,w=box_cls_per_level.shape
+            N,anchorx4,h,w=pred_bbox_deltas.shape
+            num_class=num_classxanchor*4//anchorx4
+            A=num_classxanchor//num_class
+
+            box_cls_per_level=self.permute_and_flatten(box_cls_per_level,N,A,num_class,h,w)
+            box_cls_flatten.append(box_cls_per_level)
+
+            box_regression_per_level =self.permute_and_flatten(box_regression_per_level, N, A, 4, h, w)
+            box_regression_flatten.append(box_regression_per_level)
+
+        box_cls=torch.cat(box_cls_flatten,dim=1).flatten(0,-2)
+        box_regression=torch.cat(box_regression_flatten,dim=1).flatten(0,-2)
+
+        return box_cls, box_regression
+    def pre_nms_top_n(self):
+        if self.training:
+            return self._pre_nms_top_n["training"]
+        else:
+            return self._pre_nms_top_n['testing']
+
+    def _get_top_n_idx(self,objectness,num_anchors_per_level):
+        r=[]
+        offset=0
+        for ob in objectness.split([num_anchors_per_level], dim=1):
+            num_anchors = ob.shape[1]
+            pre_nms_top_n = min(self.pre_nms_top_n(), num_anchors)
+
+            _,top_n_idx=ob.topk(pre_nms_top_n,dim=1)
+            r.append(top_n_idx+offset)
+            offset+=num_anchors
+        return torch.cat(r,dim=1)
+
+
+
+    def filter_proposals(self,proposals,objectness,image_shapes,num_anchors_per_level):
+        num_images=proposals.shape[0]
+        objectness=objectness.reshape(num_images,-1)
+
+        levels=[torch.full((n,),idx) for idx,n in enumerate(num_anchors_per_level)]
+        levels=torch.cat(levels,dim=0)
+        levels=levels.reshape(1,-1).expand_as(objectness)
+
+        top_n_idx=self._get_top_n_idx(objectness,num_anchors_per_level)
+        image_range=torch.arange(num_images)
+        batch_idx=image_range[:,None]
+        objectness=objectness[batch_idx,top_n_idx]
+        levels=levels[batch_idx,top_n_idx]
+        proposals=proposals[batch_idx,top_n_idx]
+
+        objectness_prob=torch.sigmoid(objectness)
+
+        final_boxes=[]
+        final_scores=[]
+        for boxes,scores,lvl,img_shape in zip(proposals,objectness_prob,levels,image_shapes):
+            boxes=box_ops.clip_boxes_to_image(boxes,img_shape)
+            keep=box_ops.remove_samll_boxes(boxes,self.min_size)
+
+            boxes,scores,lvl=boxes[keep],scores[keep],lvl[keep]
+            keep=torch.where(torch.ge(scores,self.score_thresh))[0]
+            boxes, scores, lvl = boxes[keep], scores[keep], lvl[keep]
+
+            keep=box_ops.batched_nms(boxes,scores,lvl,self.nms_thresh)
+            keep=keep[:self.post_nms_top_n()]
+            boxes,scores=boxes[keep],scores[keep]
+            final_boxes.append(boxes)
+            final_scores.append(scores)
+        return final_boxes, final_scores
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     def forward(self,image_list,features,targets):
         features=list(features.values())
         objectness,pred_bbox_deltas=self.head(features)
         anchors=self.anchor_generator(image_list,features)
+
+        num_images=len(anchors)
+        num_anchors_per_level_shape_tensors=[o[0].shape  for o in objectness]
+        num_anchors_per_level=[s[0]*s[1]*s[2] for s in num_anchors_per_level_shape_tensors]
+
+        objectness,pred_bbox_deltas=self.concat_box_prediction_layers(objectness,pred_bbox_deltas)
+
+        proposals=self.box_coder.decode(pred_bbox_deltas.detach(),anchors)
+        proposals=proposals.reshape(num_images,-1,4)
+
+        boxes,scores=self.filter_proposals(proposals,objectness,image_list.resized_sizes,num_anchors_per_level)
+
+        losses={}
+
+
 
 
 
