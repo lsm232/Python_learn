@@ -214,6 +214,34 @@ class RegionProposalNetwork(nn.Module):
 
 
 
+    def assign_targets_to_anchors(self,anchors,targets):
+        labels=[]
+        matched_gt_boxes=[]
+        for anchors_per_image,targets_per_image in zip(anchors,targets):
+            gt_boxes=targets_per_image["boxes"]
+            match_quality_matrix=box_ops.box_iou(gt_boxes,anchors_per_image)
+            matched_idxs=self.proposal_matcher(match_quality_matrix)
+
+            matched_gt_boxes_per_image=gt_boxes[matched_idxs.clamp(min=0)]
+            labels_per_image=matched_idxs>=0
+            labels_per_image=labels_per_image.to(dtype=torch.float32)
+
+            bg_indices=matched_idxs==-1
+            labels_per_image[bg_indices]=0.0
+
+            inds_to_discard=matched_idxs==-2
+            labels_per_image[inds_to_discard]=-1.0
+
+            labels.append(labels_per_image)
+            matched_gt_boxes.append(matched_gt_boxes_per_image)
+
+        return labels, matched_gt_boxes
+
+
+
+
+
+
 
 
 
@@ -243,6 +271,12 @@ class RegionProposalNetwork(nn.Module):
         boxes,scores=self.filter_proposals(proposals,objectness,image_list.resized_sizes,num_anchors_per_level)
 
         losses={}
+        if self.training:
+            assert targets is not None
+            labels,matched_gt_boxes=self.assign_targets_to_anchors(anchors,targets)
+            regression_targets=self.box_coder.encode(matched_gt_boxes,anchors)
+
+
 
 
 

@@ -33,6 +33,31 @@ class BoxCoder(object):
         pred_boxes=torch.stack([pred_xmin,pred_ymin,pred_xmax,pred_ymax],dim=2).flatten(1)
         return pred_boxes
 
+    def encode(self,matched_gt_boxes,anchors):
+        boxes_per_image=[len(b) for b in matched_gt_boxes]
+        matched_gt_boxes=torch.cat(matched_gt_boxes,dim=0)
+        proposals=torch.cat(anchors,dim=0)
+        targets = self.encode_single(matched_gt_boxes, proposals)
+        return targets.split(boxes_per_image, 0)
+
+    def encode_single(self, reference_boxes, proposals):
+        """
+        Encode a set of proposals with respect to some
+        reference boxes
+
+        Arguments:
+            reference_boxes (Tensor): reference boxes
+            proposals (Tensor): boxes to be encoded
+        """
+        dtype = reference_boxes.dtype
+        device = reference_boxes.device
+        weights = torch.as_tensor(self.weights, dtype=dtype, device=device)
+        targets = encode_boxes(reference_boxes, proposals, weights)
+
+        return targets
+
+
+
 
 
 
@@ -65,6 +90,33 @@ class Mather(object):
         self.high_threshold=high_threshhold
         self.low_threshold=low_threshold
         self.allow_low_quality_matches=allow_low_quality_matches
+    def __call__(self, match_quality_matrix):
+        matched_vals,matched_idx=match_quality_matrix.max(dim=0)
+        if self.allow_low_quality_matches:
+            all_matches_idx=matched_idx
+        else:
+            all_matches_idx=None
+
+        below_low_threshold=matched_vals<self.low_threshold
+        between_threshold=matched_vals>=self.low_threshold & matched_vals<=self.high_threshold
+
+        matched_idx[below_low_threshold]=-1
+        matched_idx[between_threshold]=-2
+
+        if self.allow_low_quality_matches:
+            assert all_matches_idx is not None
+            self.set_low_quality_matches(matched_idx,all_matches_idx,match_quality_matrix)
+
+        return matched_idx
+
+    def set_low_quality_matches(self,matched_idx,all_matches_idx,match_quality_matrix):
+        highest_quality_foreach_gt,_=match_quality_matrix.max(dim=1)
+        gt_pred_pairs_of_highest_quality=torch.where(match_quality_matrix,highest_quality_foreach_gt[:,None])
+        pre_inds_to_update=gt_pred_pairs_of_highest_quality[1]
+        matched_idx[pre_inds_to_update]=all_matches_idx[pre_inds_to_update]
+
+
+
 
 
 

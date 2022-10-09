@@ -4,9 +4,9 @@ import numpy as np
 
 
 
-lis = ['1','2']
-
-a,b = list(map(int,lis))
-
-print(a,b)
+info = {'name':'班长', 'id':100, 'sex':'f', 'address':'北京'}
+age = info.get('age')
+print(age)
+age=info.get('age',18)
+print(info)
 
