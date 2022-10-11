@@ -331,6 +331,96 @@ class RPNHead(nn.Module):
             bbox_per_level.append(self.bbox_pred(feature))
         return logits_per_level,bbox_per_level
 
+def generate_anchors(size,aspect_ratio,device,dtype=torch.float32):
+    size=torch.as_tensor(size,dtype=dtype,device=device)
+    aspect_ratio=torch.as_tensor(aspect_ratio,dtype=dtype,device=device)
+    ws=torch.sqrt(1/aspect_ratio)
+    hs=1/ws
+    ws=size*ws
+    hs=size*hs
+    base_anchors=torch.stack([-ws,-hs,ws,hs],dim=1)/2
+    return base_anchors.round()
+
+def set_cell_anchors(sizes,aspect_ratios,device,dtype):
+    cell_anchors=[generate_anchors(size,aspect_ratio,device,dtype) for size,aspect_ratio in zip(sizes,aspect_ratios)]
+    return cell_anchors
+
+def grid_anchors(base_anchors,grid_sizes,strides):
+    #将每个特征图的每个点上生成的base anchors，复制到原图上
+    anchors=[]
+    for base_anchors_per_level,grid_size_per_level,stride_per_level in zip(base_anchors,grid_sizes,strides):
+        shifts_x=torch.arange(0,grid_size_per_level[0])*strides[0]
+        shifts_y=torch.arange(0,grid_size_per_level[1])*strides[1]
+        shifts_y,shifts_x=torch.meshgrid([shifts_y,shifts_x])
+        shifts_y=shifts_y.reshape(-1)
+        shifts_x=shifts_x.reshape(-1)
+        shifts=torch.stack([shifts_x,shifts_y,shifts_x,shifts_y],dim=1)
+        shifts_anchors=base_anchors[None,:,:]+shifts[:,None,:]
+        anchors.append(shifts_anchors.reshape(-1,4))
+    return anchors
+
+def cached_grid_anchors(base_anchors,cache,image_list,features):
+    pad_image_size=image_list.tensor.shape[-2:]
+    grid_sizes=[feature.shape[-2:] for feature in features]
+    strides=[[pad_image_size[0]/grid_size[0],pad_image_size[1]/grid_size[1]] for grid_size in grid_sizes]
+
+    key=str(grid_sizes)+str(strides)
+    if key in cache:
+        return cache[key]
+    anchors=grid_anchors(base_anchors,grid_sizes,strides)
+    cache[key]=anchors
+    return anchors
+
+class AnchorsGenerator(nn.Module):
+    def __init__(self,anchor_sizes=((32,),(64,),(128,),(256,),(512,)),aspect_ratios=((0,5,1.0,2.0))):
+        super(AnchorsGenerator, self).__init__()
+        self.sizes=anchor_sizes
+        self.aspect_ratios=len(anchor_sizes)*aspect_ratios
+    def forward(self,image_list,features):
+        device=features.device
+        dtype=features.dtype
+        base_anchors_over_features=set_cell_anchors(self.sizes,self.aspect_ratios,device,dtype)
+        shifts_anchors_over_features=cached_grid_anchors(base_anchors_over_features,{},image_list,features)
+
+        anchors=[]
+        for i in range(len(image_list.tensors)):
+            anchors_per_image=[]
+            for anchors_per_image_shifts in shifts_anchors_over_features:
+                anchors_per_image.append(anchors_per_image_shifts)
+            anchors.append(anchors_per_image)
+
+        anchors=[torch.cat(anchors_) for anchors_ in anchors]
+        return anchors
+
+def permete_and_flatten(layer,N,A,C,H,W):
+    layer=layer.view(N,A,C,H,W)
+    layer=layer.permute(0,3,4,1,2)
+    layer=layer.reshape(N,-1,C)
+    return layer
+
+def concat_box_prediction_layers(box_cls,box_regression):
+    box_cls_flatten=[]
+    box_regression_flatten=[]
+    for box_cls_per_level,box_regression_per_level in zip(box_cls,box_regression):
+        N,AxC,H,W=box_cls_per_level.shape
+        Ax4=box_regression_per_level.shape[1]
+        A = Ax4 // 4
+        # classes_num
+        C = AxC // A
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
