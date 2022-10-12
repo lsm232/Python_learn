@@ -408,6 +408,251 @@ def concat_box_prediction_layers(box_cls,box_regression):
         # classes_num
         C = AxC // A
 
+        box_cls_per_level=permete_and_flatten(box_cls_per_level,N,A,C,H,W)
+        box_cls_flatten.append(box_cls_per_level) #N,-1,C
+        box_regression_per_level=permete_and_flatten(box_regression_per_level,N,A,4,H,W)
+        box_regression_flatten.append(box_regression_per_level)
+
+    box_cls_flatten=torch.cat(box_cls_flatten,dim=1).flatten(0,-2)
+    box_regression_flatten=torch.cat(box_regression_flatten,dim=1).flatten(0,-2)
+    return box_cls,box_regression
+
+def decode_single(rel_codes,boxes):
+    dx=rel_codes[:,0::4]
+    dy=rel_codes[:,1::4]
+    dw=rel_codes[:,2::4]
+    dh=rel_codes[:,3::4]
+
+    width=boxes[:,2]-boxes[:,0]
+    height=boxes[:,3]-boxes[:,1]
+    ctr_x=boxes[:,0]+width/2
+    ctr_y=boxes[:,1]+height/2
+
+    pred_ctr_x=dx*width[:,None]+ctr_x[:,None]
+    pred_ctr_y=dy*height[:,None]+ctr_y[:,None]
+    pred_width=torch.exp(dw)*width[:,None]
+    pred_height=torch.exp(dh)*height[:,None]
+
+    pred_xmin=pred_ctr_x-0.5*width
+    pred_xmax=pred_ctr_x+0.5*width
+    pred_ymin=pred_ctr_y-0.5*height
+    pred_ymax=pred_ctr_y+0.5*height
+
+    pred_boxes=torch.stack([pred_xmin,pred_ymin,pred_xmax,pred_ymax],dim=2).flatten(1)
+    return pred_boxes
+
+def decode(rel_codes,boxes):
+    concat_boxes=torch.cat(boxes,dim=0)
+    box_num=len(concat_boxes)
+    pred_boxes=decode_single(rel_codes,concat_boxes)
+    pred_boxes=pred_boxes.reshape(box_num,-1,4)
+    return pred_boxes
+
+def _get_top_n_idx(objectness,num_anchors_per_level,used_anchors_num):
+    #(batch,num_anchors_per_image),[num1,...,num5]
+    r=[]
+    offset=0.
+    for ob in objectness.split(num_anchors_per_level,1):
+        num_anchors=ob.shape[1]
+        nums=min(num_anchors,used_anchors_num)
+        _,top_n_idx=ob.topk(nums,dim=1)
+        r.append(top_n_idx+offset)
+        offset+=nums
+    return torch.cat(r,dim=1)
+
+def clip_boxes_to_image(boxes,resized_shape):
+    dim=boxes.dim()
+    boxes_x=boxes[...,0::2]
+    boxes_y=boxes[...,1::2]
+    height,width=resized_shape
+
+    boxes_x=boxes_x.clamp(min=0,max=width)
+    boxes_y=boxes_y.clamp(min=0,max=height)
+
+    clipped_boxes=torch.stack([boxes_x,boxes_y],dim=dim)
+    return clipped_boxes.reshape(boxes.shape)
+
+def remove_small_boxes(boxes,min_size):
+    ws,hs=boxes[:,2]-boxes[:,0],boxes[:,3]-boxes[:,1]
+    keep=torch.logical_and(torch.ge(ws,min_size),torch.ge(hs,min_size))
+    keep=torch.where(keep)[0]
+    return keep
+
+def batched_nms(boxes,scores,level,iou_threshold):
+    max_coordinate=boxes.max()
+    offsets=level*max_coordinate
+    boxes=boxes+offsets[:,None]
+    keep=torch.ops.torchvision.nms(boxes, scores, iou_threshold)
+    return keep
+
+def filter_proposals(proposals,objectness,resized_shapes,num_anchors_per_level):
+    len_images=len(proposals)
+    objectness=objectness.reshape(len_images,-1)
+
+    levels=[torch.full(size=(n,),fill_value=i) for i,n in enumerate(num_anchors_per_level)]
+    levels=torch.cat(levels).reshape(1,-1).expand_as(objectness)
+
+    idx=_get_top_n_idx(objectness,num_anchors_per_level,500)
+
+    image_range=torch.arange(len_images)
+    batch_idx=image_range[:,None]
+
+    proposals=proposals[batch_idx,idx]
+    objectness=objectness[batch_idx,idx]
+    levels=levels[batch_idx,idx]
+
+    objectness_prob=torch.sigmoid(objectness)
+    final_scores=[]
+    final_boxes=[]
+    for boxes,scores,lvl,resized_shape in zip(proposals,objectness_prob,levels,resized_shapes):
+        boxes=clip_boxes_to_image(boxes,resized_shape)
+
+        keep=remove_small_boxes(boxes,500)
+        boxes,scores,lvl=boxes[keep],scores[keep],lvl[keep]
+
+        keep=torch.where(torch.ge(scores,0.7))[0]
+        boxes, scores, lvl = boxes[keep], scores[keep], lvl[keep]
+
+        keep=batched_nms(boxes,scores,lvl,0.7)
+        pos_nms_top=200
+        keep=keep[:pos_nms_top]
+        boxes,scores=boxes[keep],scores[keep]
+        final_boxes.append(boxes)
+        final_scores.append(scores)
+    return final_boxes,final_scores
+
+def box_area(boxes):
+    return (boxes[:,2]-boxes[:,0])*(boxes[:,3]-boxes[:,1])
+
+def box_iou(boxes1,boxes2):
+    area1=box_area(boxes1)
+    area2=box_area(boxes2)
+    lt=torch.max(boxes1[:,None,:2],boxes2[None,:,:2])
+    rb=torch.max(boxes1[:,None,2:],boxes2[None,:,2:])
+
+    wh=(rb-lt).clamp(min=0)
+    inter=wh[:,:,0]*wh[:,:,1]
+    iou=inter/(area1[:,None]+area2-inter)
+    return iou
+
+def set_low_quality_matches_(matches,all_matches,match_quality_matrix):
+    highest_quality_foreach_gt,_=match_quality_matrix.max(dim=1)
+    gt_pred_pairs_of_highest_quality=torch.where(torch.eq(match_quality_matrix,highest_quality_foreach_gt[:,None]))
+    pre_inds_to_update = gt_pred_pairs_of_highest_quality[1]
+    matches[pre_inds_to_update] = all_matches[pre_inds_to_update]
+
+class Matcher(object):
+    def __init__(self,high_threshold,low_threshold,allow_low_quality_matches):
+        self.BELOW_LOW_THRESHOLD = -1
+        self.BETWEEN_THRESHOLDS = -2
+        assert low_threshold <= high_threshold
+        self.high_threshold = high_threshold  # 0.7
+        self.low_threshold = low_threshold  # 0.3
+        self.allow_low_quality_matches = allow_low_quality_matches
+    def __call__(self,match_quality_matrix):
+        matched_vals,matches=match_quality_matrix.max(dim=0)
+        if self.allow_low_quality_matches:
+            all_matches=matches.clone()
+        else:
+            all_matches=None
+        below_low_threshold=matched_vals<self.low_threshold
+        between_threshold=(matched_vals>=self.low_threshold) & (matched_vals<self.high_threshold)
+
+        matches[below_low_threshold]=self.BELOW_LOW_THRESHOLD
+        matches[between_threshold]=self.BETWEEN_THRESHOLDS
+
+        if self.allow_low_quality_matches:
+            set_low_quality_matches_(matches,all_matches,match_quality_matrix)
+
+        return matches
+
+def assign_targets_to_anchors(anchors,targets):
+    labels=[]
+    matched_gt_boxes=[]
+    for anchors_per_image,targets_per_image in zip(anchors,targets):
+        gt_boxes=targets["boxes"]
+        match_quality_matrix=box_iou(gt_boxes,anchors_per_image)
+        matched_idxs=Matcher()(match_quality_matrix)
+
+        matched_gt_boxes_per_image=gt_boxes[matched_idxs.clamp(min=0)]
+        labels_per_image=matched_idxs>=0
+        bg_indices=matched_idxs==Matcher().BELOW_LOW_THRESHOLD
+        labels_per_image[bg_indices]=0.0
+
+        inds_to_discard=matched_idxs==Matcher().BETWEEN_THRESHOLDS
+        labels_per_image[inds_to_discard]=-1.0
+
+    labels.append(labels_per_image)
+    matched_gt_boxes.append(matched_gt_boxes_per_image)
+    return labels,matched_gt_boxes
+
+def encode_boxes(gt_boxes,anchors):
+    gt_xmin=gt_boxes[:,0::4]
+    gt_xmax=gt_boxes[:,1::4]
+    gt_ymin=gt_boxes[:,2::4]
+    gt_ymax=gt_boxes[:,3::4]
+
+    anchors_xmin = anchors[:, 0::4]
+    anchors_xmax = anchors[:, 1::4]
+    anchors_ymin = anchors[:, 2::4]
+    anchors_ymax = anchors[:, 3::4]
+
+    gt_widths=gt_xmax-gt_xmin
+    gt_heights=gt_ymax-gt_ymin
+    anchors_widths = anchors_xmax - anchors_xmin
+    anchors_heights = anchors_ymax - anchors_ymin
+
+    gt_ctr_x=gt_xmin+0.5*gt_widths
+    gt_ctr_y=gt_ymin+0.5*gt_heights
+    anchors_ctr_x = anchors_xmin + 0.5 * anchors_widths
+    anchors_ctr_y = anchors_ymin + 0.5 * anchors_heights
+
+    targets_dx=(gt_ctr_x-anchors_ctr_x)/anchors_widths
+    targets_dy=(gt_ctr_y-anchors_ctr_y)/anchors_heights
+    targets_dw=torch.log(gt_widths/anchors_widths)
+    targets_dh=torch.log(gt_heights/anchors_heights)
+
+    targets=torch.cat([targets_dx,targets_dy,targets_dw,targets_dh],dim=1)
+    return targets
+
+def encode_single(gt_boxes,anchors):
+    targets=encode_boxes(gt_boxes,anchors)
+    return targets
+
+def encode(gt_boxes,anchors):
+    boxes_per_image=[len(anchors_) for anchors_ in anchors]
+    gt_boxes=torch.cat(gt_boxes,dim=0)
+    anchors=torch.cat(anchors,dim=0)
+    targets=encode_single(gt_boxes,anchors)
+    return targets.split(boxes_per_image,0)
+
+class BalancedPositiveNegativeSampler(object):
+    def __init__(self,batch_size_per_image,positive_fraction):
+        self.batch_size_per_image=batch_size_per_image
+        self.positive_fraction=positive_fraction
+
+    def __call__(self,labels):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
