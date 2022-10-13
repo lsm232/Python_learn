@@ -632,6 +632,92 @@ class BalancedPositiveNegativeSampler(object):
         self.positive_fraction=positive_fraction
 
     def __call__(self,labels):
+        batch_size_per_image=self.batch_size_per_image
+        fraction=self.positive_fraction
+        pos_idx=[]
+        neg_idx=[]
+        for matched_idxs_per_image in labels:
+            positive=torch.where(torch.ge(matched_idxs_per_image,1))[0]
+            negative=torch.where(torch.eq(matched_idxs_per_image,0))[0]
+            num_pos=int(batch_size_per_image*fraction)
+            num_pos=min(positive.numel(),num_pos)
+            num_neg=batch_size_per_image-num_pos
+            num_neg=min(negative.numel(),num_neg)
+            perm1=torch.randperm(positive.numel())[:num_pos]
+            perm2=torch.randperm(negative.numel())[:num_neg]
+            pos_idx_per_image=positive[perm1]
+            neg_idx_per_image=negative[perm2]
+            pos_idx_per_image_mask=torch.zeros_like(matched_idxs_per_image)
+            neg_idx_per_image_mask=torch.zeros_like(matched_idxs_per_image)
+            pos_idx_per_image_mask[pos_idx_per_image]=1
+            neg_idx_per_image_mask[neg_idx_per_image]=1
+            pos_idx.append(pos_idx_per_image_mask)
+            neg_idx.append(neg_idx_per_image_mask)
+        return pos_idx,neg_idx
+
+def smooth_l1_loss(input,target,beta,size_average):
+    n=torch.abs(input-target)
+    cond=torch.lt(n,beta)
+    loss=torch.where(cond,0.5 * n ** 2 / beta, n - 0.5 * beta)
+    if size_average:
+        return loss.mean()
+    return loss.sum()
+
+def compute_loss(objectness,pred_box_deltas,labels,regression_targets):
+    sampled_pos_inds,sampled_neg_inds=BalancedPositiveNegativeSampler(500,0.5)(labels)
+    sampled_pos_inds=torch.where(torch.cat(sampled_pos_inds,dim=0))[0]
+    sampled_neg_inds=torch.where(torch.cat(sampled_neg_inds,dim=0))[0]
+    sampled_inds=torch.cat([sampled_pos_inds,sampled_neg_inds],dim=0)
+    objectness=objectness.flatten()
+    labels=torch.cat(labels,dim=0)
+    regression_targets=torch.cat(regression_targets,dim=0)
+    box_loss=smooth_l1_loss(pred_box_deltas,regression_targets,1/9,False)/(sampled_inds.numel())
+    objectness_loss=F.binary_cross_entropy_with_logits(objectness[sampled_inds],labels[sampled_inds])
+    return box_loss,objectness_loss
+
+class RegionProposalNetwork(nn.Module):
+    def __init__(self,anchors_generator,rpn_head,fg_iou_thresh,bg_iou_thresh,batch_size_per_image,positive_fraction,pre_nms_top_n,pos_nms_top_n,nms_thresh,score_thresh):
+        super(RegionProposalNetwork, self).__init__()
+        self.anchors_generator=anchors_generator
+        self.rpn_head=rpn_head
+        self.fg_iou_thresh=fg_iou_thresh
+        self.bg_iou_thresh=bg_iou_thresh
+        self.batch_size_per_image=batch_size_per_image
+        self.positive_fraction=positive_fraction
+        self.pre_nms_top_n=pre_nms_top_n
+        self.pos_nms_top_n=pos_nms_top_n
+        self.nms_thresh=nms_thresh
+        self.score_thresh=score_thresh
+    def forward(self,images_list,features,targets):
+        features=list(features.values())
+        objectness,pred_bbox_deltas=self.rpn_head(features)
+        anchors=self.anchors_generator(images_list,features)
+        num_images=len(anchors)
+        num_anchors_per_level_shape=[o[0].shape for o in objectness]
+        num_anchors_per_level=[s[0]*s[1]*s[2] for s in num_anchors_per_level_shape]
+
+        objectness,pred_bbox_deltas=concat_box_prediction_layers(objectness,pred_bbox_deltas)
+        proposals=decode(pred_bbox_deltas,anchors)
+        proposals=proposals.view(num_images,-1,4)
+        boxes,scores=filter_proposals(proposals,objectness,images_list.shapes,num_anchors_per_level)
+
+        losses={}
+        if self.training:
+            labels,matched_gt_boxes=assign_targets_to_anchors(anchors,targets)
+            regression_targets=encode(matched_gt_boxes,anchors)
+            loss_objectness,loss_rpn_box_reg=compute_loss(objectness,pred_bbox_deltas,labels,regression_targets)
+            losses={
+                'loss_objectness':loss_objectness,
+                'loss_rpn_box_reg':loss_rpn_box_reg
+            }
+        return boxes,losses
+
+
+
+
+
+
+
 
 
 
