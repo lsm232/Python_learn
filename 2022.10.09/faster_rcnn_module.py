@@ -13,6 +13,7 @@ from PIL import Image
 import bisect
 from typing import Dict,List,Tuple
 from torch import Tensor
+from torchvision.ops import MultiScaleRoIAlign 
 
 
 device=torch.device("gpu" if torch.cuda.is_available() else "cpu")
@@ -711,6 +712,176 @@ class RegionProposalNetwork(nn.Module):
                 'loss_rpn_box_reg':loss_rpn_box_reg
             }
         return boxes,losses
+
+def check_targets(targets):
+    assert targets is not None
+    assert all(["boxes" in t for t in targets])
+    assert all(["labels" in t for t in targets])
+
+def add_gt_proposals(gt_boxes,proposals):
+    return [torch.cat(gt_boxes,proposal) for gt_box,proposal in zip(gt_boxes,proposals)]
+
+def select_training_sample(targets,proposals):
+    check_targets(targets)
+    dtype=proposals[0].dtype
+    device=proposals[0].device
+    gt_boxes=[gt["boxes"] for gt in targets]
+    gt_labels=[gt["labels"] for gt in targets]
+    proposals=add_gt_proposals(targets["boxes"],proposals)
+    matched_idx,labels=assign_targets_to_anchors(proposals,targets)
+    sampled_inds=BalancedPositiveNegativeSampler(500,0.5)(labels)
+
+    matched_gt_boxes=[]
+    num_images=len(proposals)
+
+    for img_id in range(num_images):
+        img_sampled_inds=sampled_inds[img_id]
+        proposals[img_id]=proposals[img_id][img_sampled_inds]
+        labels[img_id]=labels[img_id][img_sampled_inds]
+        matched_idx[img_id]=matched_idx[img_id][img_sampled_inds]
+        
+        gt_boxes_in_image=gt_boxes[img_id]
+        matched_gt_boxes.append(gt_boxes_in_image[matched_idx[img_id]])
+    regression_targets=encode(matched_gt_boxes,proposals)
+    return proposals,labels,regression_targets
+
+box_roi_pool=MultiScaleRoIAlign(
+    featmap_names=['0','1','2','3'],
+    output_size=[7,7],
+    sampling_ratio=2
+)
+
+class TwoMLPHead(nn.Module):
+    def __init__(self,in_channels,representation_size):
+        super(TwoMLPHead, self).__init__()
+        self.fc6=nn.Linear(in_channels,representation_size)
+        self.fc7=nn.Linear(representation_size,representation_size)
+    def forward(self,x):
+        x=x.flatten(start_dim=1)
+        x=F.relu(self.fc6(x))
+        x=F.relu(self.fc7(x))
+        return x
+
+class FastRCNNPredictor(nn.Module):
+    def __init__(self,in_channels,num_classes):
+        super(FastRCNNPredictor, self).__init__()
+        self.cls_score=nn.Linear(in_channels,num_classes)
+        self.bbox_pred=nn.Linear(in_channels,num_classes*4)
+    def forward(self,x):
+        x=x.flatten(start_dim=1)
+        scores=self.cls_score(x)
+        bbox_deltas=self.bbox_pred(x)
+        return scores,bbox_deltas
+
+def fastrcnn_loss(class_logits,box_regression,labels,regression_targets):
+    labels=torch.cat(labels,dim=0)
+    regression_targets=torch.cat(regression_targets,dim=0)
+    classification_loss=F.cross_entropy(class_logits,labels)
+
+    sampled_pos_inds_subset=torch.where(torch.ge(labels,0))[0]
+    labels_pos=labels[sampled_pos_inds_subset]
+    N,num_classes=class_logits.shape
+    box_regression=box_regression.reshape(N,-1,4)
+
+    box_loss=smooth_l1_loss(
+        box_regression[sampled_pos_inds_subset,labels_pos],
+        regression_targets[sampled_pos_inds_subset],
+        beta=1/9,
+        size_average=False,
+    )/labels.numel()
+
+    return classification_loss,box_loss
+
+def postprocess_detections(class_logits,box_regression,proposals,image_shapes):
+    score_thresh=0.5
+    nms_thresh=0.5
+    detection_per_img=100
+
+    num_classes=class_logits.shape[-1]
+    boxes_per_image=[boxes_in_image.shape[0]  for boxes_in_image in proposals]
+    pred_boxes=decode(box_regression,proposals)
+
+    pred_scores=F.softmax(class_logits,-1)
+    pred_boxes_list=pred_boxes.split(boxes_per_image,0)
+    pred_scores_list=pred_scores.split(boxes_per_image,0)
+
+    all_boxes=[]
+    all_scores=[]
+    all_labels=[]
+    for boxes,scores,image_shape in zip(pred_boxes_list,pred_scores_list,image_shapes):
+        boxes=clip_boxes_to_image(boxes,image_shape)
+        labels=torch.arange(num_classes)
+        labels=labels.view(1,-1).expand_as(scores)
+
+        boxes=boxes[:,1:]
+        scores = scores[:, 1:]
+        labels = labels[:, 1:]
+
+        boxes = boxes.reshape(-1, 4)
+        scores = scores.reshape(-1)
+        labels = labels.reshape(-1)
+
+        inds=torch.where(torch.gt(scores,score_thresh))[0]
+        boxes,scores,labels=boxes[inds],scores[inds],labels[inds]
+        keep=remove_small_boxes(boxes,min_size=1)
+        boxes, scores, labels = boxes[keep], scores[keep], labels[keep]
+
+        keep = batched_nms(boxes, scores, labels, nms_thresh)
+
+        # keep only topk scoring predictions
+        # 获取scores排在前topk个预测目标
+        keep = keep[:detection_per_img]
+        boxes, scores, labels = boxes[keep], scores[keep], labels[keep]
+
+        all_boxes.append(boxes)
+        all_scores.append(scores)
+        all_labels.append(labels)
+
+    return all_boxes, all_scores, all_labels
+
+class ROIheads(nn.Module):
+    def __init__(self,box_roi_pool,box_head,box_predictor,fg_iou_thresh,bg_iou_thresh,
+                 batch_size_per_image,positive_fraction,score_thresh,nms_thresh,detection_per_image
+                 ):
+        super(ROIheads, self).__init__()
+        self.box_roi_pool = box_roi_pool  # Multi-scale RoIAlign pooling
+        self.box_head = box_head  # TwoMLPHead
+        self.box_predictor = box_predictor  # FastRCNNPredictor
+
+        self.score_thresh = score_thresh  # default: 0.05
+        self.nms_thresh = nms_thresh  # default: 0.5
+        self.detection_per_img = detection_per_image  # default: 100
+
+    def forward(self,features,proposals,image_shapes,targets):
+        if self.training:
+            proposals,labels,regression_targets=select_training_sample(targets,proposals)
+        else:
+            labels=None
+            regression_targets=None
+        box_features=box_roi_pool(features,proposals,image_shapes)
+        box_features=TwoMLPHead(backbone.out_channels*resolution**2,representation_size)(box_features)
+        class_logits,box_regression=FastRCNNPredictor(1024,num_classes=5)(box_features)
+        result=[]
+        losses={}
+        if self.training:
+            loss_classifier,loss_box_reg=fastrcnn_loss(class_logits,box_regression,labels,regression_targets)
+            losses = {
+                "loss_classifier": loss_classifier,
+                "loss_box_reg": loss_box_reg
+            }
+        else:
+            boxes,scores,labels=postprocess_detections(class_logits,box_regression,proposals,image_shapes)
+            num_images=len(boxes)
+            for i in range(num_images):
+                result.append(
+                    {
+                        "boxes":boxes[i],
+                        "labels": labels[i],
+                        "scores": scores[i],
+                    }
+                )
+        return result,losses
+
 
 
 
