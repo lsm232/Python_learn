@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from .parse_config import *
 from typing import List
+from .layers import *
 
 def create_modules(module_defs:list,img_size):
     img_size=[img_size]*2 if isinstance(img_size,int) else img_size
@@ -70,6 +71,40 @@ def create_modules(module_defs:list,img_size):
         routs_binary[i]=True
     return module_list,routs_binary
 
+class YOLOLayer(nn.Module):
+    def __init__(self,anchors,nc,img_size,stride):
+        super(YOLOLayer, self).__init__()
+        self.anchors=torch.Tensor(anchors)
+        self.na=len(anchors)
+        self.nc=nc
+        self.no=nc+5
+        self.stride=stride
+        self.nx,self.ny,self.ng=0,0,(0,0)
+        self.anchor_vec=self.anchors/self.stride
+        self.anchor_wh=self.anchor_vec.view(1,self.na,1,1,2)
+        self.grid=None
+    def create_grids(self,ng=(13,13),device="cpu"):
+        self.nx,self.ny=ng
+        self.ng=torch.tensor(ng,dtype=torch.float)
+
+        if not self.training:
+            yv,xv=torch.meshgrid([torch.arange(self.ny),torch.arange(self.nx)])
+            self.grid=torch.stack((xv,yv),2).view((1,1,self.ny,self.nx,2)).float()
+
+    def forward(self,p):
+        bs,_,ny,nx=p.shape
+        if(self.nx,self.ny)!=(nx,ny) or self.grid is None:
+            self.create_grids((nx,ny))
+        p=p.view(bs,self.na,self.no,self.ny,self.nx).permute(0,1,3,4,2).contiguous()
+        if self.training:
+            return p
+        else:
+            io=p.clone()
+            io[...,:2]=torch.sigmoid(io[...,:2])+self.grid
+            io[..., 2:4] = torch.exp(io[..., 2:4]) * self.anchor_wh
+            io[...,:4]*=self.stride
+            torch.sigmoid_(io[...,4:])
+            return io.view(bs, -1, self.no), p
 
 
 
