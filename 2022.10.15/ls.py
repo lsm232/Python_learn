@@ -6,7 +6,7 @@ import numpy as np
 import seaborn as sns
 
 
-def draw_histogram_and_line_single(img_path:str,color:str,bins:int,value:int,alpha:float,label:str):
+def draw_histogram_and_line_single(img_path:str,color:str,bins:int,value:list,alpha:float,label:str):
     path = img_path
     files = os.listdir(path)
     all_imgs = torch.rand(size=(len(files), 512, 512))
