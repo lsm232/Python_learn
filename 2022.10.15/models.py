@@ -109,7 +109,8 @@ class YOLOLayer(nn.Module):
 
 
 
-
+def get_yolo_layers(self):
+    return [i for i,m in enumerate(self.module_list) if m.__class__.__name__=="YOLOLayer"]
 
 
 class Darknet(nn.Module):
@@ -118,3 +119,16 @@ class Darknet(nn.Module):
         self.input_size=[img_size]*2 if isinstance(img_size,int) else img_size
         self.module_defs=parse_model_cfg(cfg)
         self.module_list,self.routs=create_modules(self.module_defs,img_size)
+        self.yolo_layers = get_yolo_layers(self)
+    def forward(self,x):
+        yolo_out,out=[],[]
+        for i,module in enumerate(self.module_list):
+            name=module.__class__.__name__
+            if name in ["WeightedFeatureFusion", "FeatureConcat"]:
+                x=module(x,out)
+            elif name=="YOLOLayer":
+                yolo_out.append(module(x))
+            else:
+                x=module(x)
+
+            out.append(x if self.routs[i] else [])

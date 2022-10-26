@@ -1,4 +1,5 @@
 from torch.utils.data import  Dataset
+import torch
 import random
 import numpy as np
 import os
@@ -136,6 +137,11 @@ class LoadImagesAndLabels(Dataset):
                 labels[:, 4] = ratio[1] * h * (x[:, 2] + x[:, 4] / 2) + pad[1]
 
 
+    def @staticmethod
+    def collate_fn(batch):
+        img,label,path,shapes,index=zip(*batch)
+        return torch.stack(img,0),torch.cat(label,0),path,shapes,index
+
 
 
 
@@ -177,7 +183,7 @@ def load_mosaic(self,index):
     labels = x.copy()  # 深拷贝，防止修改原数据
     if x.size > 0:  # Normalized xywh to pixel xyxy format
         # 计算标注数据在马赛克图像中的坐标(绝对坐标)
-        #*w,*h是什么意思，这个地方感觉代码有问题
+        #*w,*h是什么意思，yolo和faster rcnn标注不同，yolo的box是/w或/h之后的值，因此需要一个还原
         labels[:, 1] = w * (x[:, 1] - x[:, 3] / 2) + padw  # xmin
         labels[:, 2] = h * (x[:, 2] - x[:, 4] / 2) + padh  # ymin
         labels[:, 3] = w * (x[:, 1] + x[:, 3] / 2) + padw  # xmax
