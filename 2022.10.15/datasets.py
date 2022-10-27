@@ -140,6 +140,8 @@ class LoadImagesAndLabels(Dataset):
     def @staticmethod
     def collate_fn(batch):
         img,label,path,shapes,index=zip(*batch)
+        for i, l in enumerate(label):  #这个是list所以会起作用
+            l[:, 0] = i  # add target image index for build_targets()
         return torch.stack(img,0),torch.cat(label,0),path,shapes,index
 
 

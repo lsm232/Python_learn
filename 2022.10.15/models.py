@@ -131,4 +131,11 @@ class Darknet(nn.Module):
             else:
                 x=module(x)
 
-            out.append(x if self.routs[i] else [])
+            out.append(x if self.routs[i] else [])  #保存用于concat和add的特征
+
+        if self.training:
+            return yolo_out
+        else:
+            x,p=zip(*yolo_out)
+            x=torch.cat(x,1)
+            return x,p
