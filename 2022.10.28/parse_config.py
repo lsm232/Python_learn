@@ -30,6 +30,8 @@ def parse_model_cfg(cfg):
             if line.startswith("["):
                 nets.append({})
                 nets[-1]["type"]=line[1:-1]
+                if nets[-1]["type"] == "convolutional":  #因为yolo predictor也有
+                    nets[-1]["batch_normalize"] = 0
 
             else:
                 key,value=line.split("=")
