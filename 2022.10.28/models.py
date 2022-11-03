@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
-from .parse_config import *
-
+from layers import *
+from parse_config import *
+ONNX_EXPORT = False
 
 
 def create_modules(module_defs,img_size):
@@ -19,7 +20,7 @@ def create_modules(module_defs,img_size):
             filters=mdef['filters']
             bn=mdef['batch_normalize']
 
-            modules.add_module(nn.Conv2d(kernel_size=kersize,stride=stride,in_channels=output_filters[-1],out_channels=filters,padding=kersize//2 if mdef['pad'] else 0,bias=not bn))
+            modules.add_module('conv2d',nn.Conv2d(kernel_size=kersize,stride=stride,in_channels=output_filters[-1],out_channels=filters,padding=kersize//2 if mdef['pad'] else 0,bias=not bn))
 
             if bn:
                 modules.add_module('bn',nn.BatchNorm2d(filters))
@@ -46,7 +47,7 @@ def create_modules(module_defs,img_size):
         elif mdef['type']=='route':
             layers=mdef['layers']
             filters=sum([output_filters[m]  if m<0 else m+1 for m in layers ])
-            routs.extend([m+i if m<0 else for m in layers])
+            routs.extend([m+i if m<0 else m for m in layers])
             modules=FeatureConcat(layers=layers)
 
         elif mdef['type']=='shortcut':
@@ -68,8 +69,55 @@ def create_modules(module_defs,img_size):
 
     routs_binary=[False] *len(module_defs)
     for i in routs:
-        routs[i]=True
+        routs_binary=True
     return module_list,routs_binary
+
+
+class YOLOLayer(nn.Module):
+    def __init__(self,anchors,stride,nc,img_size):
+        super(YOLOLayer, self).__init__()
+        self.anchors=torch.Tensor(anchors)
+        self.stride=stride
+        self.na=len(anchors)
+        self.nc=nc
+        self.no=nc+5 #x,y,w,h,objectness
+
+        self.nx,self.ny,self.ng=0,0,(0,0)  #用来干嘛的
+        self.anchor_vec=self.anchors/stride
+        self.anchor_wh=self.anchor_vec.view(1,self.na,1,1,2)
+        self.grid=None
+
+    def create_grids(self,ng=(13,13),device='cpu'):
+        self.nx,self.ny=ng
+        x=torch.arange(self.nx)
+        y=torch.arange(self.ny)
+        grid_x,grid_y=torch.meshgrid([x,y])
+        self.grid=torch.stack((grid_y,grid_x),2).view(1,1,self.ny,self.nx,2).float()
+
+
+
+
+    def forward(self,p):
+        bs,_,ny,nx=p.shape
+        if (self.nx,self.ny)!=(nx,ny) or self.grid is None:
+            self.create_grids((nx,ny),p.device)
+
+        p=p.view(bs,self.na,self.no,self.ny,self.nx).permute(0,1,3,4,2).contiguous()
+
+        if self.training:
+            return p
+        else:
+            io=p.clone()
+            io[...,:2]=torch.sigmoid(io[...,:2])+self.grid
+            io[...,2:4]=torch.exp(io[...,2:4])*self.anchor_wh
+            io[...,:4]*=self.stride
+            torch.sigmoid_(io[...,4:])
+            return io.view(bs,-1,self.no),p
+
+
+def get_yolo_layers(self):
+    return [i  for i,m in enumerate(self.module_list) if m.__class__.__name__=='YOLOLayer']
+
 
 
 
@@ -82,3 +130,30 @@ class Darknet(nn.Module):
         self.input_size=[img_size]*2 if isinstance(img_size,int) else img_size
         self.module_defs=parse_model_cfg(cfg)
         self.module_list,self.routs=create_modules(self.module_defs,self.input_size)
+        self.yolo_layers=get_yolo_layers(self)
+    def forward(self,x):
+        yolo_out,out=[],[]
+        for i,module in enumerate(self.module_list):
+            name=module.__class__.__name__
+            if name in ["WeightedFeatureFusion", "FeatureConcat"]:
+                x=module(x,out)
+            elif name=='YOLOLayer':
+                yolo_out.append(x)
+            else:
+                x=module(x)
+            out.append(x if self.routs[i] else [])
+
+            if self.training:
+                return yolo_out
+            else:
+                x,p=zip(*yolo_out)
+                x=torch.cat(x,1)
+                return x,p
+
+
+
+
+
+
+
+

@@ -5,7 +5,7 @@ class FeatureConcat(nn.Module):
     def __init__(self,layers):
         super(FeatureConcat, self).__init__()
         self.layers=layers
-        self.multiple=len(layers)
+        self.multiple=len(layers)>1
     def forward(self,x,outputs): #outputs里面是记录了routes的输出
         return torch.cat([outputs[i] for i in self.layers],1) if self.multiple else outputs[self.layers[0]]
 

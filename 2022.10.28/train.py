@@ -6,7 +6,7 @@ import datetime
 import math
 from .parse_config import *
 
-def train(hyp):
+def train(hyp,opt):
     device=torch.device("gpu" if torch.cuda.is_available() else "cpu")
     print(f"using {device.type} training......")
 
@@ -44,6 +44,63 @@ def train(hyp):
     hyp["obj"] *= imgsz_test / 320
 
     model=Darknet(cfg).to(device)
+
+    if opt.freeze_layers:
+        output_layer_indices=[idx-1 for idx,m in enumerate(model.module_list) if m.__class__.__name__=='YOLOLayer']
+        freeze_layer_indices=[x for x,m in enumerate(model.module_list) if (x not in output_layer_indices) and ((x-1) not in output_layer_indices)]
+
+        for idx in freeze_layer_indices:
+            for parmater in model.module_list[idx].parameters():
+                parmater.requires_grad_(False)
+
+    else:
+        darknet_end_layer=74
+        for idx in range(74):
+            for paramater in model.module_list[idx].parameters():
+                paramater.requires_grad_(False)
+
+
+    pg=[p for p in model.parameters() if p.requires_grad]
+    optimizer=torch.optim.SGD(pg,lr=hyp['lr0'],momentum=hyp["momentum"],weight_decay=hyp["weight_decay"], nesterov=True)
+
+    scaler=torch.cuda.amp.GradScaler() if opt.amp else None
+
+    start_epoch=0
+    best_map=0.0
+    if weights.endwith(".pt") or weights.endwith(".pth"):
+        ckpt=torch.load(weights,map_location=device)
+
+        try:
+            ckpt['model']={k:v for k,v in ckpt['model'].items() if model.state_dict()[k].numel()==v.numel()}
+            model.load_state_dict(ckpt['model'])
+        except:
+            print('can not load weights')
+
+        if ckpt['optimizer'] is not  None:
+            optimizer.load_state_dict(ckpt['optimizer'])
+            if "best_map" in ckpt.keys():
+                best_map=ckpt['best_map']
+
+        start_epoch = ckpt["epoch"] + 1
+        if epochs < start_epoch:
+            print('%s has been trained for %g epochs. Fine-tuning for %g additional epochs.' %
+                  (opt.weights, ckpt['epoch'], epochs))
+            epochs += ckpt['epoch']  # finetune additional epochs
+
+        if opt.amp and "scaler" in ckpt:
+            scaler.load_state_dict(ckpt["scaler"])
+
+        del ckpt
+
+    lf=lambda x:((1+math.cos(x*math.pi/epochs))/2)*(1-hyp["lrf"])+ hyp["lrf"]
+    scheduler=torch.optim.lr_scheduler.LambdaLR(optimizer,lr_lambda=lf)
+    scheduler.last_epoch = start_epoch
+
+
+
+
+
+
 
 
 
