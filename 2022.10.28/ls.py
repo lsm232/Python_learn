@@ -1,7 +1,10 @@
+import matplotlib
+import matplotlib.pyplot as plt
 import numpy as np
-import torch
+import math
 
-x=torch.tensor([1,2,3])
-y=torch.tensor([4,5,6])
-grid_x,grid_y=torch.meshgrid(x,y)
-c=1
+with open(r'./data/my_train_data.shapes','r') as fid:
+    m=fid.read().splitlines()
+    for ms in m:
+        c=ms.split()
+        z=1
