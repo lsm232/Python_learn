@@ -1,10 +1,12 @@
 import argparse
+from datasets import *
 from .models import *
 import yaml
 import torch
 import datetime
 import math
 from .parse_config import *
+from torch.utils.data import DataLoader
 
 def train(hyp,opt):
     device=torch.device("gpu" if torch.cuda.is_available() else "cpu")
@@ -95,6 +97,19 @@ def train(hyp,opt):
     lf=lambda x:((1+math.cos(x*math.pi/epochs))/2)*(1-hyp["lrf"])+ hyp["lrf"]
     scheduler=torch.optim.lr_scheduler.LambdaLR(optimizer,lr_lambda=lf)
     scheduler.last_epoch = start_epoch
+
+    train_dataset=LoadImageAndLabels(train_path,imgsz_train,batch_size,True,hyp,opt.rect,opt.single_cls)
+    val_dataset=LoadImageAndLabels(test_path,imgsz_test,batch_size,True,hyp,opt.rect,opt.single_cls)
+
+    train_dataloader=DataLoader(
+        dataset=train_dataset,
+        batch_size=2,
+        shuffle=False if opt.rect else True,
+        num_workers=nw,
+        pin_memory=True,
+        collate_fn=train_dataset.
+
+    )
 
 
 
