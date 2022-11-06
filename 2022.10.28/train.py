@@ -101,15 +101,35 @@ def train(hyp,opt):
     train_dataset=LoadImageAndLabels(train_path,imgsz_train,batch_size,True,hyp,opt.rect,opt.single_cls)
     val_dataset=LoadImageAndLabels(test_path,imgsz_test,batch_size,True,hyp,opt.rect,opt.single_cls)
 
+    nw=min(os.cpu_count(),batch_size,8)
     train_dataloader=DataLoader(
         dataset=train_dataset,
         batch_size=2,
         shuffle=False if opt.rect else True,
         num_workers=nw,
         pin_memory=True,
-        collate_fn=train_dataset.
+        collate_fn=train_dataset.collate_fn
 
     )
+    val_dataloader=DataLoader(
+        dataset=val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=nw,
+        pin_memory=True,
+        collate_fn=val_dataset.collate_fn
+    )
+
+    model.nc=nc
+    model.hyp=hyp
+    model.gr=1.0
+
+    #coco = get_coco_api_from_dataset(val_dataset)
+
+    print("starting traning for %g epochs..." % epochs)
+    print('Using %g dataloader workers' % nw)
+    for epoch in range(start_epoch,epochs):
+        mloss,lr=train_one_epoch(model,optimizer,train_dataloader,device,epoch,accumulate,imgsz_train,multi_scale,grid_min,grid_max,gs,50,True,scaler)
 
 
 

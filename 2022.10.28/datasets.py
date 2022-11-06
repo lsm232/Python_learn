@@ -1,4 +1,5 @@
 from torch.utils.data import Dataset
+import torch
 import numpy as np
 from pathlib import Path
 import os
@@ -208,8 +209,162 @@ class LoadImageAndLabels(Dataset):
             img, ratio, pad = letterbox(img, shape, auto=False, scale_up=self.augument,scale_fill=False)
 
             shapes = (h0, w0), ((h / h0, w / w0), pad)
+            labels=[]
+            x=self.labels[index]
+            if x.size>0:
+                labels=x.copy()
+                labels[:, 1] = ratio[0] * w * (x[:, 1] - x[:, 3] / 2) + pad[0]  # pad width
+                labels[:, 2] = ratio[1] * h * (x[:, 2] - x[:, 4] / 2) + pad[1]  # pad height
+                labels[:, 3] = ratio[0] * w * (x[:, 1] + x[:, 3] / 2) + pad[0]
+                labels[:, 4] = ratio[1] * h * (x[:, 2] + x[:, 4] / 2) + pad[1]
 
-            
+
+        if self.augument:
+            if not self.mosaic:
+                img,labels=random_affine(img, labels,
+                                            degrees=hyp["degrees"],
+                                            translate=hyp["translate"],
+                                            scale=hyp["scale"],
+                                            shear=hyp["shear"])
+
+            # Augment colorspace
+            augment_hsv(img, h_gain=hyp["hsv_h"], s_gain=hyp["hsv_s"], v_gain=hyp["hsv_v"])
+
+            nL=len(labels)
+            if nL:
+                # convert xyxy to xywh
+                labels[:, 1:5] = xyxy2xywh(labels[:, 1:5])
+
+                # Normalize coordinates 0-1
+                labels[:, [2, 4]] /= img.shape[0]  # height
+                labels[:, [1, 3]] /= img.shape[1]  # width
+
+            if self.augment:
+                # random left-right flip
+                lr_flip = True  # 随机水平翻转
+                if lr_flip and random.random() < 0.5:
+                    img = np.fliplr(img)
+                    if nL:
+                        labels[:, 1] = 1 - labels[:, 1]  # 1 - x_center
+
+                # random up-down flip
+                ud_flip = False
+                if ud_flip and random.random() < 0.5:
+                    img = np.flipud(img)
+                    if nL:
+                        labels[:, 2] = 1 - labels[:, 2]  # 1 - y_center
+
+            labels_out = torch.zeros((nL, 6))  # nL: number of labels
+            if nL:
+                labels_out[:, 1:] = torch.from_numpy(labels)
+
+            img = img[:, :, ::-1].transpose(2, 0, 1)
+            img = np.ascontiguousarray(img)
+
+            return torch.from_numpy(img), labels_out, self.img_files[index], shapes, index
+
+    def coco_index(self,index):
+        o_shapes=self.shapes[index][::-1]
+        x=self.labels[index]
+        labels=x.copy()
+        return torch.from_numpy(labels),o_shapes
+
+    @staticmethod
+    def collate_fn(batch):
+        img,label,path,shapes,index=zip(*batch)
+        for i,j in enumerate(label):
+            j[:,0]=i
+        return torch.stack(img,0),torch.cat(label,0),path,shapes,index
+
+
+
+
+def random_affine(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10, border=0):
+    """随机旋转，缩放，平移以及错切"""
+    # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
+    # https://medium.com/uruvideo/dataset-augmentation-with-random-homographies-a8f4b44830d4
+    # 这里可以参考我写的博文: https://blog.csdn.net/qq_37541097/article/details/119420860
+    # targets = [cls, xyxy]
+
+    # 最终输出的图像尺寸，等于img4.shape / 2
+    height = img.shape[0] + border * 2
+    width = img.shape[1] + border * 2
+
+    # Rotation and Scale
+    # 生成旋转以及缩放矩阵
+    R = np.eye(3)  # 生成对角阵
+    a = random.uniform(-degrees, degrees)  # 随机旋转角度
+    s = random.uniform(1 - scale, 1 + scale)  # 随机缩放因子
+    R[:2] = cv2.getRotationMatrix2D(angle=a, center=(img.shape[1] / 2, img.shape[0] / 2), scale=s)
+
+    # Translation
+    # 生成平移矩阵
+    T = np.eye(3)
+    T[0, 2] = random.uniform(-translate, translate) * img.shape[0] + border  # x translation (pixels)
+    T[1, 2] = random.uniform(-translate, translate) * img.shape[1] + border  # y translation (pixels)
+
+    # Shear
+    # 生成错切矩阵
+    S = np.eye(3)
+    S[0, 1] = math.tan(random.uniform(-shear, shear) * math.pi / 180)  # x shear (deg)
+    S[1, 0] = math.tan(random.uniform(-shear, shear) * math.pi / 180)  # y shear (deg)
+
+    # Combined rotation matrix
+    M = S @ T @ R  # ORDER IS IMPORTANT HERE!!
+    if (border != 0) or (M != np.eye(3)).any():  # image changed
+        # 进行仿射变化
+        img = cv2.warpAffine(img, M[:2], dsize=(width, height), flags=cv2.INTER_LINEAR, borderValue=(114, 114, 114))
+
+    # Transform label coordinates
+    n = len(targets)
+    if n:
+        # warp points
+        xy = np.ones((n * 4, 3))
+        xy[:, :2] = targets[:, [1, 2, 3, 4, 1, 4, 3, 2]].reshape(n * 4, 2)  # x1y1, x2y2, x1y2, x2y1
+        # [4*n, 3] -> [n, 8]
+        xy = (xy @ M.T)[:, :2].reshape(n, 8)
+
+        # create new boxes
+        # 对transform后的bbox进行修正(假设变换后的bbox变成了菱形，此时要修正成矩形)
+        x = xy[:, [0, 2, 4, 6]]  # [n, 4]
+        y = xy[:, [1, 3, 5, 7]]  # [n, 4]
+        xy = np.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T  # [n, 4]
+
+        # reject warped points outside of image
+        # 对坐标进行裁剪，防止越界
+        xy[:, [0, 2]] = xy[:, [0, 2]].clip(0, width)
+        xy[:, [1, 3]] = xy[:, [1, 3]].clip(0, height)
+        w = xy[:, 2] - xy[:, 0]
+        h = xy[:, 3] - xy[:, 1]
+
+        # 计算调整后的每个box的面积
+        area = w * h
+        # 计算调整前的每个box的面积
+        area0 = (targets[:, 3] - targets[:, 1]) * (targets[:, 4] - targets[:, 2])
+        # 计算每个box的比例
+        ar = np.maximum(w / (h + 1e-16), h / (w + 1e-16))  # aspect ratio
+        # 选取长宽大于4个像素，且调整前后面积比例大于0.2，且比例小于10的box
+        i = (w > 4) & (h > 4) & (area / (area0 * s + 1e-16) > 0.2) & (ar < 10)
+
+        targets = targets[i]
+        targets[:, 1:5] = xy[i]
+
+    return img, targets
+
+
+def augment_hsv(img, h_gain=0.5, s_gain=0.5, v_gain=0.5):
+    # 这里可以参考我写的博文:https://blog.csdn.net/qq_37541097/article/details/119478023
+    r = np.random.uniform(-1, 1, 3) * [h_gain, s_gain, v_gain] + 1  # random gains
+    hue, sat, val = cv2.split(cv2.cvtColor(img, cv2.COLOR_BGR2HSV))
+    dtype = img.dtype  # uint8
+
+    x = np.arange(0, 256, dtype=np.int16)
+    lut_hue = ((x * r[0]) % 180).astype(dtype)
+    lut_sat = np.clip(x * r[1], 0, 255).astype(dtype)
+    lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
+
+    img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
+    cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=img)  # no return needed
 
 
 
@@ -229,7 +384,7 @@ def letterbox(img,new_shape,scale_up,auto,scale_fill):
     elif scale_fill:
         dw,dh=0,0
         new_unpad=new_shape
-        ratio=new_shape[0]/h,new_shape[1]/w
+        ratio=new_shape[1]/w,new_shape[0]/h
 
     dw/=2
     dh/=2
