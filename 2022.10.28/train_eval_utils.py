@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import math
 import random
 from torch.cuda import amp
+from .data.utils import *
 
 def warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor):
 
@@ -49,5 +50,35 @@ def train_one_epoch(model,optimizer,data_loader,device,epoch,print_freq,accumula
         with amp.autocast(enabled=scaler is not None):
             pred=model(imgs)
             loss_dict=compute_loss(pred,targets,model)
+            losses=sum(loss for loss in loss_dict.values())
+
+        loss_dict_reduced=reduce_dict(loss_dict)
+        losses_reduced = sum(loss for loss in loss_dict_reduced.values())
+        loss_items = torch.cat((loss_dict_reduced["box_loss"],
+                                loss_dict_reduced["obj_loss"],
+                                loss_dict_reduced["class_loss"],
+                                losses_reduced)).detach()
+
+        losses *= 1. / accumulate  # scale loss
+        losses*=1/accumulate
+
+        if scaler is not None:
+            scaler.scale(losses).backward()
+        else:
+            losses.backward()
+
+        if ni%accumulate==0:
+            if scaler is not None:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+            optimizer.zero_grad()
+
+
+        if ni % accumulate == 0 and lr_scheduler is not None:  # 第一轮使用warmup训练方式
+            lr_scheduler.step()
+
+    return mloss, now_lr
 
 
