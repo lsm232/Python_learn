@@ -108,6 +108,8 @@ class Loss(nn.Module):
 
         neg_num=torch.clamp(3*pos_num,max=mask.size(1)).unsqueeze(-1)
 
+        m=2
+
 
         #今天真倒霉
 
