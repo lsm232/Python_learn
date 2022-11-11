@@ -107,5 +107,8 @@ class Loss(nn.Module):
         _,con_rank=con_idx.sort(dim=1)
 
         neg_num=torch.clamp(3*pos_num,max=mask.size(1)).unsqueeze(-1)
-        
+
+
+        #今天真倒霉
+
 
