@@ -107,10 +107,15 @@ class Loss(nn.Module):
         _,con_rank=con_idx.sort(dim=1)
 
         neg_num=torch.clamp(3*pos_num,max=mask.size(1)).unsqueeze(-1)
+        neg_mask=torch.lt(con_rank,neg_num)  #取出损失最大的
 
-        m=2
+        con_loss=(con*(mask.float()+neg_mask.float())).sum(-1)
+        total_loss=con_loss+loc_loss
 
+        num_mask=torch.gt(pos_num,0).float()
 
-        #今天真倒霉
+        pos_num = pos_num.float().clamp(min=1e-6)  # 防止出现分母为零的情况
+        ret = (total_loss * num_mask / pos_num).mean(dim=0)  # 只计算存在正样本的图像损失
+        return ret
 
 
