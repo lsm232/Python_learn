@@ -49,6 +49,8 @@ class SSD300(nn.Module):
 
         default_box=dboxes300_coco()
         self.compute_loss=Loss(default_box)
+        self.encoder=Encoder(default_box)
+        self.postprocess=PostProcess(default_box)
 
 
 
@@ -75,6 +77,10 @@ class SSD300(nn.Module):
             for param in layer.parameters():
                 if param.dim()>1:
                     nn.init.xavier_normal_(param)
+
+    def forward(self,image,targets=None):
+        x=self.feature_extractor(image)
+        detection_features=
 
 class Loss(nn.Module):
     def __init__(self,dboxes):

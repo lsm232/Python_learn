@@ -2,6 +2,33 @@ import numpy as np
 import torch
 import math
 import itertools
+import torch.nn as nn
+
+
+class Encoder(object):
+    def __init__(self,dboxes):
+        self.dboxes=dboxes(order='ltrb')
+        self.dboxes_xywh=dboxes(order='xywh').unsqueeze(dim=0)
+        self.nboxes=self.dboxes.size(0)
+        self.scale_xy=dboxes.scale_xy
+        self.scale_wh=dboxes.scale_wh
+
+    def encode(self,bboxes_in,labels_in,criteria=0.5):
+
+
+
+class PostProcess(nn.Module):
+    def __init__(self,dboxes):
+        super(PostProcess, self).__init__()
+        self.dboxes_xywh = nn.Parameter(dboxes(order='xywh').unsqueeze(dim=0),
+                                        requires_grad=False)
+        self.scale_xy = dboxes.scale_xy  # 0.1
+        self.scale_wh = dboxes.scale_wh  # 0.2
+
+        self.criteria = 0.5
+        self.max_output = 100
+    
+
 
 
 def dboxes300_coco():
