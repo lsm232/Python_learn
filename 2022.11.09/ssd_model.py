@@ -78,9 +78,42 @@ class SSD300(nn.Module):
                 if param.dim()>1:
                     nn.init.xavier_normal_(param)
 
+    def bbox_view(self,features,loc_extractor,conf_extractor):
+        locs=[]
+        confs=[]
+        for f,l,c in zip(features,loc_extractor,conf_extractor):
+            locs.append(l(features).view(f.size(0),4,-1))
+            confs.append(c(features).view(f.size(0),self.num_classes,-1))
+        locs,confs=torch.cat(locs,2).contiguous(),torch.cat(confs,2).contiguous()
+        return locs,confs
+
+
     def forward(self,image,targets=None):
         x=self.feature_extractor(image)
-        detection_features=
+        detection_features=[]
+        detection_features.append(x)
+        for layer in self.additional_blocks():
+            x=layer(x)
+            detection_features.append(x)
+        locs,confs=self.bbox_view(detection_features,self.loc,self.conf)
+
+        if self.training:
+            if targets is None:
+                raise ValueError("in training mode,targets should be passed")
+            bboxes_out=targets['boxes']
+            bboxes_out=bboxes_out.transpose(1,2).contiguous()
+            labels_out=targets['labels']
+            loss=self.compute_loss(locs,confs,bboxes_out,labels_out)
+            return {"total_losses": loss}
+
+        results=self.postprocess(locs,confs)
+        return results
+
+
+
+
+
+
 
 class Loss(nn.Module):
     def __init__(self,dboxes):
