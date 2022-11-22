@@ -1,12 +1,12 @@
 import torch
 
-a=torch.arange(0,6).reshape(1,2,3)
-b=torch.arange(6,12).reshape(1,2,3)
-c=torch.stack([a,b],dim=0)
-d=torch.stack([a,b],dim=1)
-e=torch.stack([a,b],dim=2)
-f=torch.stack([a,b],dim=3)
+a=torch.Tensor([1,2,3])
+b=torch.Tensor([4,5,6])
+c,d=a.chunk(2,dim=0)
+m=d
+d+=1
 m=1
+
 
 
 
