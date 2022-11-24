@@ -36,5 +36,8 @@ class inception(nn.Module):
         b4=self.branch4(x)
         out=torch.cat([b1,b2,b3,b4],dim=1)
         return out
-    
 
+m = nn.Conv2d(16, 33, (3, 5), stride=(2, 1), padding=(4, 2), dilation=(3, 1))
+input = torch.randn(20, 16, 50, 100)
+output = m(input)
+z=1
