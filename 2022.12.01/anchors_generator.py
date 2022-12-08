@@ -70,8 +70,65 @@ class AnchorGenerator(nn.Module):
             )
         return multi_level_base_anchors
 
-    def gen_single_level_base_anchors(self,base_sizes,scales,ratios,center=None):
-        
+    def gen_single_level_base_anchors(self,base_size,scales,ratios,center=None):
+        w=base_size
+        h=base_size
+        if center is None:
+            x_center=self.center_offset*w
+            y_center=self.center_offset*h
+        else:
+            x_center,y_center=center
+
+        h_ratios=torch.sqrt(ratios)
+        w_ratios=1/h_ratios
+        if self.scale_major:
+            ws=(w*w_ratios[:,None]*scales[None,:]).view(-1)
+            hs=(h*h_ratios[:,None]*scales[None,:]).view(-1)
+        else:
+            ws = (w * scales[:, None] * w_ratios[None, :]).view(-1)
+            hs = (h * scales[:, None] * h_ratios[None, :]).view(-1)
+
+        base_anchors=[x_center-0.5*ws,y_center-0.5*hs,x_center+0.5*ws,y_center+0.5*hs]
+        base_anchors=torch.stack(base_anchors,dim=-1)
+        return base_anchors
+
+    def _meshgrid(self,x,y,row_major):
+        xx=x.repeat(y.shape[0])
+        yy=y.view(-1,1).repeat(1,x.shape[0]).view(-1)
+        if not row_major:
+            return yy,xx
+        else:
+            return xx,yy
+
+    def grid_priors(self,featmap_sizes,dtype=torch.float32,device='cuda'):
+        assert self.num_levels==len(featmap_sizes)
+        multi_level_anchors=[]
+        for i in range(self.num_levels):
+            anchors=self.single_level_grid_priors(
+                featmap_sizes[i],level_idx=i,dtype=dtype,device=device
+            )
+            multi_level_anchors.append(anchors)
+        return multi_level_anchors
+
+    def single_level_grid_priors(self,featmap_size,level_idx,dtype=torch.float32,device='cuda'):
+        base_anchors=self.base_anchors[level_idx].to(device).to(dtype)
+        feat_h,feat_w=featmap_size
+        stride_w,stride_h=self.strides[level_idx]
+        shift_x=torch.arange(0,feat_w,device=device).to(dtype)*stride_w
+        shift_y=torch.arange(0,feat_h,device=device).to(dtype)*stride_h
+
+        shift_xx,shift_yy=self._meshgrid(shift_x,shift_y)
+        shifts=torch.stack([shift_xx,shift_yy,shift_xx,shift_yy],dim=-1)
+        all_anchors=base_anchors[None,:,:]+shifts[:,None,:]
+        all_anchors=all_anchors.view(-1,4)
+        return all_anchors
+
+    def sparse_priors(self,prior_idxs,featmap_size,level_idx,dtype=torch.float32,device='cuda'):
+        c=1
+
+
+
+
 
 
 
