@@ -16,4 +16,4 @@ class FeatureAdaption(BaseModule):
                      override=dict(type='Normal', name='conv_adaption', std=0.01))):
         super(FeatureAdaption, self).__init__(init_cfg)
         offset_channels=kernel_size*kernel_size*2
-        
+
