@@ -85,10 +85,10 @@ class RCDC_block(nn.Module):
         self.layer3=block(in_dims,kersizes=[3,3,1],strides=[1,1,1],dilated_rates=[1,3,1])
         self.layer4=block(in_dims,kersizes=[3,3,3,1],strides=[1,1,1,1],dilated_rates=[1,3,5,1])
     def forward(self,x):
-        l1=self.layer1(x)
-        l2=self.layer2(l1)
-        l3=self.layer3(l2)
-        l4=self.layer4(l3)
+        l1=self.layer1(x)+x
+        l2=self.layer2(l1)+l1
+        l3=self.layer3(l2)+l2
+        l4=self.layer4(l3)+l3
         return l4
 
 class ResnetGenerator_lsm3(nn.Module):
@@ -105,18 +105,19 @@ class ResnetGenerator_lsm3(nn.Module):
             nn.Conv2d(input_nc, 32, kernel_size=7, padding=0, bias=False),
             norm_layer(32),
             nn.ReLU(True),
+            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1, bias=False),
+            norm_layer(32),
+            nn.ReLU(True),
         )
         self.down1=nn.Sequential(
             nn.Conv2d(32,64,kernel_size=3,stride=2,padding=1,bias=False),
             norm_layer(64),
             nn.ReLU(True),
-            nn.Conv2d(64,64,kernel_size=1,bias=True),
         )
         self.down2 = nn.Sequential(
             nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1, bias=False),
             norm_layer(128),
             nn.ReLU(True),
-            nn.Conv2d(128, 128, kernel_size=1, bias=True),
         )
 
         self.RCDC_block=RCDC_block(128)
@@ -126,8 +127,10 @@ class ResnetGenerator_lsm3(nn.Module):
             nn.InstanceNorm2d(64),
             nn.ReLU(True),
         )
-        self.deconv1_back_1x1=nn.Sequential(
-            nn.Conv2d(128,64,1,bias=False),
+        self.deconv1_back_3x3=nn.Sequential(
+            nn.Conv2d(128, 64, kernel_size=3, stride=1, padding=1, bias=False),
+            norm_layer(64),
+            nn.ReLU(True),
         )
 
         self.deconv2 = nn.Sequential(
@@ -135,8 +138,10 @@ class ResnetGenerator_lsm3(nn.Module):
             nn.InstanceNorm2d(32),
             nn.ReLU(True),
         )
-        self.deconv2_back_1x1 = nn.Sequential(
-            nn.Conv2d(64, 32, 1, bias=False),
+        self.deconv2_back_3x3 = nn.Sequential(
+            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1, bias=False),
+            nn.InstanceNorm2d(32),
+            nn.ReLU(True),
         )
 
         self.resblock1=ResnetBlock(
@@ -156,17 +161,16 @@ class ResnetGenerator_lsm3(nn.Module):
         d2=self.down2(d1)
         r1=self.RCDC_block(d2)
 
-        d2=self.deconv1(d2)
+
         r1=self.deconv1(r1)
-        d2_r1=torch.cat([d2,r1],dim=1)
-        d2_r1=self.deconv1_back_1x1(d2_r1)
+        d1_r1=torch.cat([d1,r1],dim=1)
+        d1_r1=self.deconv1_back_3x3(d1_r1)
 
-        d1=self.deconv2(d1)
-        d2_r1=self.deconv2(d2_r1)
-        d1_d2_r1=torch.cat([d1,d2_r1],dim=1)
-        d1_d2_r1=self.deconv2_back_1x1(d1_d2_r1)
-        d1_d2_r1=self.resblock1(d1_d2_r1)
+        d1_r1=self.deconv2(d1_r1)
+        l1_d2_r1=torch.cat([l1,d1_r1],dim=1)
+        l1_d2_r1=self.deconv2_back_3x3(l1_d2_r1)
+        l1_d2_r1=self.resblock1(l1_d2_r1)
 
-        out=self.out_conv(l1+d1_d2_r1)
+        out=self.out_conv(x+l1_d2_r1)
         return out
 
