@@ -56,6 +56,24 @@ class DeformConv2d(nn.Module):
         p=self._get_p(offset,dtype)
         p=p.contiguous().permute(0,2,3,1) #b,h,w,2*k*k
 
+        x_offset=self.inert_value(x,offset,dtype)
+        if self.modulation:
+            m=m.contiguous().permute(0,2,3,1)
+            m=m.unsqueeze(dim=1)
+            m=torch.cat([m for _ in range(x_offset.size(1))],dim=1)
+            x_offset*=m
+
+        x_offset=self._reshape_x_offset(x_offset,ks)
+        out=self.conv(x_offset)
+        return out
+
+    @staticmethod
+    def _reshape_x_offset(x_offset,ks):
+        b,c,h,w,N=x_offset.size()
+        x_offset=torch.cat([x_offset[...,s:ks+s].contiguous().view(b,c,h,w*ks) for s in range(0,N,ks)],dim=-1)
+        x_offset=x_offset.contiguous().view(b,c,h*ks,w*ks)
+        return x_offset
+
     def _get_x_q(self,x,q,N):
         b,h,w,_=q.size()
         padded_w=x.size(3)
@@ -91,6 +109,9 @@ class DeformConv2d(nn.Module):
         x_q_rb=self._get_x_q(x,q_rb,N)
         x_q_lb=self._get_x_q(x,q_lb,N)
         x_q_rt=self._get_x_q(x,q_rt,N)
+
+        x_offset=g_lt.unsqueeze(dim=1)*x_q_lt+g_rb.unsqueeze(dim=1)*x_q_rb+g_lb.unsqueeze(dim=1)*x_q_lb+g_rt.unsqueeze(dim=1)*x_q_rt
+        return x_offset
 
 
 
