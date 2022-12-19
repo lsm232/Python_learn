@@ -24,7 +24,7 @@ class module(nn.Module):
         self.relu=nn.ReLU(True)
     def forward(self,x):
         res=self.first_layer(x)
-        x=self.layer(x)
+        x=self.layer(res)
         x=self.relu(x+res)
         return res,x
 
