@@ -24,9 +24,11 @@ X=tf.placeholder('float')
 Y=tf.placeholder('float')
 W=tf.Variable(tf.random_normal([1]),name='weight')
 b=tf.Variable(tf.zeros(1),name='bias')
-z=tf.multiply(X,W)+b
+z=tf.reduce_mean(tf.multiply(X,W)+b)
+tf.summary.scalar('z',z)
 
 loss=tf.reduce_mean(tf.square(Y-z))
+tf.summary.scalar('loss_fn',loss)
 optimizer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize(loss)
 
 init=tf.global_variables_initializer()
@@ -37,6 +39,8 @@ saverdir='./log'
 
 with tf.Session() as sess:
     sess.run(init)
+    merged_summary_op=tf.summary.merge_all()
+    summary_writer=tf.summary.FileWriter('log/mnist_',sess.graph)
     for epoch in range(epochs):
         for (x,y) in zip(trainx,trainy):
             sess.run(optimizer,feed_dict={X:x,Y:y})
@@ -47,8 +51,11 @@ with tf.Session() as sess:
                 plotdata['batch_size'].append(epoch)
                 plotdata['loss'].append(los)
             saver.save(sess,saverdir+'/'+"model_.ckpt",global_step=epoch)
+        summary_str = sess.run(merged_summary_op, feed_dict={X: x, Y: y})
+        summary_writer.add_summary(summary_str, epoch)
     print('finished')
     print('cost:',sess.run(loss,feed_dict={X:trainx,Y:trainy}),'W:',sess.run(W),'b:',sess.run(b))
+
 
     plt.plot(trainx,trainy,'ro',label='data')
     plt.plot(trainx,sess.run(W)*trainx+sess.run(b),label='fit')
