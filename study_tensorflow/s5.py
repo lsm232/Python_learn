@@ -31,3 +31,16 @@ with tf.device(tf.train.replica_device_setter(worker_device='./job:worker/task:%
     saver=tf.train.Saver(max_to_keep=1)
     merged_summary_op=tf.summary.merge_all()
     init=tf.global_variables_initializer()
+
+    train_epochs=2200
+    display_step=2
+    sv=tf.train.Supervisor(
+        is_chief=(task_index==0),
+        logdir='log/super/',
+        init_op=init,
+        summary_op=None,
+        saver=saver,
+        global_step=global_step,
+        save_model_secs=5
+    )
+    with sv.managed_session(server.target) as sess:
