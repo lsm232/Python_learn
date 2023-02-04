@@ -14,6 +14,9 @@ pred=tf.nn.softmax(tf.matmul(x,W)+b)
 cost=tf.reduce_mean(-tf.reduce_sum(y*tf.log(pred),reduction_indices=1))
 learning_rate=0.01
 optimizer=tf.train.GradientDescentOptimizer(learning_rate).minimize(cost)
+correct_prediction=tf.equal(tf.argmax(pred,1),tf.argmax(y,1))
+acc=tf.reduce_mean(tf.cast(correct_prediction,tf.float32))
+
 
 epochs=25
 batch_size=4
@@ -33,3 +36,9 @@ with tf.Session() as sess:
             if (i+1)%display_freq==0:
                 print("epoch:",'%04d'%(epoch+1),'cost=%0.9f'%avg_cost)
     print('fnished')
+
+    test_total_batch=int(mnist.test.num_examples/batch_size)
+    for i in range(test_total_batch):
+        batch_x,batch_y=mnist.train.next_batch(batch_size)
+
+        correct_prediction=tf.equal(tf.argmax(pred,1),tf.argmax())
