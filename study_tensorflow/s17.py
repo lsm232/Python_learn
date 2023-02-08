@@ -3,13 +3,13 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 
 def generate(samples,num_class,mean,cov,diff,regression):
-    samples_per_class=int(samples)/num_class
+    samples_per_class=int(samples/num_class)
     x0=np.random.multivariate_normal(mean,cov,samples_per_class)
     y0=np.zeros([samples_per_class])
 
     for i,dif in enumerate(diff):
         x1=np.random.multivariate_normal(mean+dif,cov,samples_per_class)
-        y1=(i+1)+np.zeros(samples_per_class)
+        y1=(i+1)+np.zeros([samples_per_class])
 
         x0=np.concatenate([x0,x1])
         y0=np.concatenate([y0,y1])
@@ -20,3 +20,6 @@ def generate(samples,num_class,mean,cov,diff,regression):
 
     return x0,y0
 
+input_dim=2
+num_classes=3
+X,Y=generate(300,num_classes)
