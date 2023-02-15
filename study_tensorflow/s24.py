@@ -41,6 +41,8 @@ def max_pool_2x2(x):
 def avg_pool_6x6(x):
     return tf.nn.avg_pool(x,ksize=[1,6,6,1],strides=[1,6,6,1],padding='SAME')
 
+images,labels=load_data(True)
+
 x=tf.placeholder(tf.float32,[None,24,24,3])
 y=tf.placeholder(tf.float32,[None,10])
 W_conv1=weight_v([5,5,3,64])
@@ -64,6 +66,20 @@ cross_entropy=-tf.reduce_sum(y*tf.log(y_conv))
 train_step=tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
 correct_pred=tf.equal(tf.argmax(y_conv,1),tf.argmax(y,1))
 acc=tf.reduce_mean(tf.cast(correct_pred,'float'))
+
+sess=tf.Session()
+sess.run(tf.global_variables_initializer())
+tf.train.start_queue_runners(sess)
+
+for i in range(10000):
+    img_batch,label_batch=sess.run([images,labels])
+    label_b=np.eye(10,dtype=float)[label_batch]
+    train_step.run(feed_dict={x:img_batch,y:label_b},session=sess)
+
+    if i%200==0:
+        train_acc=acc.eval(feed_dict={x:img_batch,y:label_b},session=sess)
+        print(train_acc)
+
 
 
 imgs,labels=load_data(True)

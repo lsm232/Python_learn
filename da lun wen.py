@@ -12,7 +12,7 @@ low_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的
 high_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\stage1_test_high'
 save_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\非局部均值滤波'
 
-
+cv2.b
 assert len(os.listdir(low_path))==len(os.listdir(high_path)),'数量不一致'
 files=os.listdir(low_path)
 

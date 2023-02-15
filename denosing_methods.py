@@ -7,14 +7,17 @@ from sklearn.metrics import mean_absolute_error as compare_mae
 import os
 import cv2
 import bm3d
-
+from skimage.restoration import estimate_sigma
+from skimage.restoration.non_local_means import denoise_nl_means
+import tqdm
+from alive_progress import alive_bar
 #这个代码是大论文中第三章涉及的传统滤波算法，包括均值滤波，中值滤波，高斯滤波，双边滤波，NLM，BM3D    注：对于NLM目前只有cv2对其进行封装，且只能处理自然图像uint8，使用matlab官方封装的NLM算法
 
 low_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\stage1_test_low'
 high_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\stage1_test_high'
 save_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\bm3d'
 
-dict_methods={'0':'均值滤波','1':'中值滤波','2':'高斯滤波','3':'双边滤波','4':'BM3D'}
+dict_methods={'0':'均值滤波','1':'中值滤波','2':'高斯滤波','3':'双边滤波','4':'NLM','5':'BM3D'}
 files = os.listdir(low_path)
 
 #
@@ -26,7 +29,7 @@ def denosing(method=''):
             path = low_path + '\\' + file
             img = Image.open(path).convert('F')
             img=np.array(img,dtype=np.float32)
-            out=cv2.blur(img,ksize=(3,3))
+            out=cv2.blur(img,ksize=(7,7))
             save_path2 = save_path + '/' + file
             Image.fromarray(out).save(save_path2)
             c = 1
@@ -38,7 +41,7 @@ def denosing(method=''):
             path = low_path + '\\' + file
             img = Image.open(path).convert('F')
             img = np.array(img, dtype=np.float32)
-            out=cv2.medianBlur(img,ksize=3)
+            out=cv2.medianBlur(img,ksize=7)
             save_path2 = save_path + '/' + file
             Image.fromarray(out).save(save_path2)
             c = 1
@@ -50,7 +53,7 @@ def denosing(method=''):
             path = low_path + '\\' + file
             img = Image.open(path).convert('F')
             img = np.array(img, dtype=np.float32)
-            out = cv2.GaussianBlur(img,ksize=(3,3),sigmaX=0.8,sigmaY=0.8)    #高斯滤波   sigmaX=0.3×[（ksize.width-1）×0.5-1] +0.8
+            out = cv2.GaussianBlur(img,ksize=(7,7),sigmaX=1.4,sigmaY=1.4)    #高斯滤波   sigmaX=0.3×[（ksize.width-1）×0.5-1] +0.8
             save_path2 = save_path + '/' + file
             Image.fromarray(out).save(save_path2)
             c = 1
@@ -68,19 +71,25 @@ def denosing(method=''):
             c = 1
         cal_index(save_path, high_path)
 
-    elif 'BM3D' == dict_methods[method]:
-        print('你选择的去噪算法是:BM3D')
-        for file in files:
+    elif 'NLM' == dict_methods[method]:
+        print('你选择的去噪算法是:NLM')
+        for file in tqdm.tqdm(files):
             path = low_path + '\\' + file
             img = Image.open(path).convert('F')
             img = np.array(img, dtype=np.float32)
-            out=bm3d.bm3d(img,0.01)
-            #
-            # plt.imshow(out,cmap='gray')
-            # plt.show()
-            # c=1
+            out = denoise_nl_means(img,patch_size=7, patch_distance=7, h=0.1,multichannel=False, fast_mode=True)
+            save_path2 = save_path + '/' + file
+            Image.fromarray(out).save(save_path2)
+            c = 1
+        cal_index(save_path, high_path)
 
-            #
+    elif 'BM3D' == dict_methods[method]:
+        print('你选择的去噪算法是:BM3D')
+        for file in tqdm.tqdm(files):
+            path = low_path + '\\' + file
+            img = Image.open(path).convert('F')
+            img = np.array(img, dtype=np.float32)
+            out=bm3d.bm3d(img,0.31)
             save_path2 = save_path + '/' + file
             Image.fromarray(out).save(save_path2)
             c = 1
@@ -110,4 +119,4 @@ def cal_index(test_path,target_path):
     print('psnr_{:.4f}±{:.4f} ssim_{:.4f}±{:.4f} mae_{:.4f}±{:.4f}'.format(np.mean(psnr),np.std(psnr),np.mean(ssim),np.std(ssim),np.mean(mae),np.std(mae)))
 
 
-denosing('4')
+denosing('5')

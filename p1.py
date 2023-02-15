@@ -7,17 +7,19 @@ from sklearn.metrics import mean_absolute_error as compare_mae
 import os
 import cv2
 import bm3d
+from skimage.restoration.non_local_means import denoise_nl_means
 
-#这个代码是大论文中第三章涉及的传统滤波算法，包括均值滤波，中值滤波，高斯滤波，双边滤波，NLM，BM3D    注：对于NLM目前只有cv2对其进行封装，且只能处理自然图像uint8，使用matlab官方封装的NLM算法
+#这个代码是大论文中第三章涉及的传统滤波算法，包括均值滤波，中值滤波，高斯滤波，双边滤波，NLM，BM3D
 
 low_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\stage1_test_low'
 high_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\stage1_test_high'
-save_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\bm3d'
+save_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\nlm'
 
 
 files=os.listdir(low_path)
 for file in files:
-    p=np.random.randint(0,len(files)-1,dtype=np.int)
+    p=50
+    #p=np.random.randint(0,len(files)-1,dtype=np.int)
     low_path_=low_path+'/'+files[p]
     high_path_=high_path+'/'+files[p]
 
@@ -46,14 +48,19 @@ for file in files:
     shuang_mae = compare_mae(y_true=high_img, y_pred=shuang_img)
     shuang_ssim = compare_ssim(im1=high_img, im2=shuang_img)
 
-    bm_img = bm3d.bm3d(low_img,0.7).astype(np.float32)  # 高斯滤波   sigmaX=0.3×[（ksize.width-1）×0.5-1] +0.8
+    nlm_img = denoise_nl_means (low_img)  # 高斯滤波   sigmaX=0.3×[（ksize.width-1）×0.5-1] +0.8
+    nlm_psnr = compare_psnr(image_true=high_img, image_test=nlm_img)
+    nlm_mae = compare_mae(y_true=high_img, y_pred=nlm_img)
+    nlm_ssim = compare_ssim(im1=high_img, im2=nlm_img)
+
+    bm_img= bm3d.bm3d(low_img,0.7,'refilter').astype(np.float32)  # 高斯滤波   sigmaX=0.3×[（ksize.width-1）×0.5-1] +0.8
     bm_psnr = compare_psnr(image_true=high_img, image_test=bm_img)
     bm_mae = compare_mae(y_true=high_img, y_pred=bm_img)
     bm_ssim = compare_ssim(im1=high_img, im2=bm_img)
 
-    print('{:.4f}  {:.4f}  {:.4f}  {:.4f}  {:.4f}'.format(jun_psnr,zhong_psnr,gao_psnr,shuang_psnr,bm_psnr))
-    print('{:.4f}  {:.4f}  {:.4f}  {:.4f}  {:.4f}'.format(jun_mae,zhong_mae,gao_mae,shuang_mae,bm_mae))
-    print('{:.4f}  {:.4f}  {:.4f}  {:.4f}  {:.4f}'.format(jun_ssim,zhong_ssim,gao_ssim,shuang_ssim,bm_ssim))
+    print('{:.4f}  {:.4f}  {:.4f}  {:.4f}  {:.4f}  {:.4f}'.format(jun_psnr,zhong_psnr,gao_psnr,shuang_psnr,nlm_psnr,bm_psnr))
+    print('{:.4f}  {:.4f}  {:.4f}  {:.4f}  {:.4f}  {:.4f}'.format(jun_mae,zhong_mae,gao_mae,shuang_mae,nlm_mae,bm_mae))
+    print('{:.4f}  {:.4f}  {:.4f}  {:.4f}  {:.4f}  {:.4f}'.format(jun_ssim,zhong_ssim,gao_ssim,shuang_ssim,nlm_ssim,bm_ssim))
 
     plt.imshow(bm_img,cmap='gray')
     plt.show()
