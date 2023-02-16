@@ -13,9 +13,9 @@ import tqdm
 from alive_progress import alive_bar
 #这个代码是大论文中第三章涉及的传统滤波算法，包括均值滤波，中值滤波，高斯滤波，双边滤波，NLM，BM3D    注：对于NLM目前只有cv2对其进行封装，且只能处理自然图像uint8，使用matlab官方封装的NLM算法
 
-low_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\stage1_test_low'
-high_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\stage1_test_high'
-save_path=r'C:\Users\Zhu\Desktop\综述\毕业-大论文\第三章传统方法的数据\bm3d'
+low_path=r'J:\综述\毕业-大论文\第三章传统方法的数据\stage1_test_low'
+high_path=r'J:\综述\毕业-大论文\第三章传统方法的数据\stage1_test_high'
+save_path=r'J:\综述\毕业-大论文\第三章传统方法的数据\bm3d'
 
 dict_methods={'0':'均值滤波','1':'中值滤波','2':'高斯滤波','3':'双边滤波','4':'NLM','5':'BM3D'}
 files = os.listdir(low_path)
@@ -53,7 +53,7 @@ def denosing(method=''):
             path = low_path + '\\' + file
             img = Image.open(path).convert('F')
             img = np.array(img, dtype=np.float32)
-            out = cv2.GaussianBlur(img,ksize=(7,7),sigmaX=1.4,sigmaY=1.4)    #高斯滤波   sigmaX=0.3×[（ksize.width-1）×0.5-1] +0.8
+            out = cv2.GaussianBlur(img,ksize=(7,7),sigmaX=1.3,sigmaY=1.3)    #高斯滤波   sigmaX=0.3×[（ksize.width-1）×0.5-1] +0.8
             save_path2 = save_path + '/' + file
             Image.fromarray(out).save(save_path2)
             c = 1
@@ -65,7 +65,7 @@ def denosing(method=''):
             path = low_path + '\\' + file
             img = Image.open(path).convert('F')
             img = np.array(img, dtype=np.float32)
-            out=cv2.bilateralFilter(img,7,1,1)
+            out=cv2.bilateralFilter(img,7,1.3,1.3)
             save_path2 = save_path + '/' + file
             Image.fromarray(out).save(save_path2)
             c = 1
@@ -77,7 +77,7 @@ def denosing(method=''):
             path = low_path + '\\' + file
             img = Image.open(path).convert('F')
             img = np.array(img, dtype=np.float32)
-            out = denoise_nl_means(img,patch_size=7, patch_distance=7, h=0.1,multichannel=False, fast_mode=True)
+            out = denoise_nl_means(img,patch_size=7, patch_distance=7, h=0.2,multichannel=False, fast_mode=True)
             save_path2 = save_path + '/' + file
             Image.fromarray(out).save(save_path2)
             c = 1
