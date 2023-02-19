@@ -7,7 +7,7 @@ from sklearn.metrics import mean_absolute_error as compare_mae
 
 testA=r'J:\cyclegan_特征掩码\dataset\test\low'
 testB=r'J:\cyclegan_特征掩码\dataset\test\high'
-fake=r'J:\cyclegan_特征掩码\results\cyclegan_1117_170epoch'
+fake=r'C:\Users\Zhu\Desktop\pl\lp2'
 
 files=os.listdir(testA)
 
@@ -21,7 +21,8 @@ ssim_f=[]
 for file in files:
     A=np.asarray(Image.open(testA+'/'+file).convert('F'))
     B=np.asarray(Image.open(testB+'/'+file).convert('F'))
-    f=np.asarray(Image.open(fake+'/'+file.split('.')[0]+'_fake.tif').convert('F'))
+    f=np.asarray(Image.open(fake+'/'+file.split('.')[0]+'_fake.tif').convert('F'))  #cyclegan class
+    #f=np.asarray(Image.open(fake+'/'+file).convert('F'))  #noise2noise class
 
     f = np.maximum(f, 0)
 
