@@ -7,7 +7,7 @@ from sklearn.metrics import mean_absolute_error as compare_mae
 
 testA=r'J:\cyclegan_特征掩码\dataset\test\low'
 testB=r'J:\cyclegan_特征掩码\dataset\test\high'
-fake=r'J:\cyclegan_特征掩码\results\cyclegan_0210-2_185epoch'
+fake=r'J:\cyclegan_特征掩码\results\cyclegan_0220-2_175epoch'
 
 files=os.listdir(testA)
 
