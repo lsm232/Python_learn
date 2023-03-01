@@ -15,7 +15,7 @@ from alive_progress import alive_bar
 
 low_path=r'J:\综述\毕业-大论文\第三章传统方法的数据\stage1_test_low'
 high_path=r'J:\综述\毕业-大论文\第三章传统方法的数据\stage1_test_high'
-save_path=r'J:\综述\毕业-大论文\第三章传统方法的数据\双边滤波-5x5'
+save_path=r'J:\综述\毕业-大论文\第三章传统方法的数据\bm3d_matlab'
 
 files=os.listdir(low_path)
 
