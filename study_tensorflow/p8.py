@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-x=tf.random_normal([4,4],dtype=tf.float32)
+x=tf.reshape(tf.linspace(0.,9.,9),(3,3))
 b=tf.random_crop(x,[2,2])
 sess=tf.Session()
 a1=sess.run(x)
