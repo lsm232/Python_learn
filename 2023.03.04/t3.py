@@ -1,7 +1,8 @@
-import torch
 
-x=torch.randn([1,1,4,4])
-y=x.roll(shifts=[1,1],dims=[2,3])
-z=y.roll(shifts=[1,1],dims=[2,3])
+import tensorflow as tf
 
-c=1
+get_var1=tf.get_variable('firstvar',[1],initializer=tf.constant_initializer(0.3))
+sess=tf.Session()
+sess.run(tf.global_variables_initializer())
+sess.run(get_var1.eval())
+sess.close()
