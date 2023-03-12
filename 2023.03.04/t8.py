@@ -3,6 +3,8 @@ import tensorflow as tf
 trainX=tf.linspace(-1,1,100)
 trainY=0.5*trainX+tf.random_normal([1])
 
+plotdata={}
+
 strps_hosts='localhost:1681'
 strworkers_hosts='localhost:1682,localhost:1683'
 
@@ -61,4 +63,12 @@ with tf.device(
                 _,epoch=sess.run([optimizer,global_step],feed_dict={X:x,Y:y});
                 summary_str=sess.run(merged_summary_op,feed_dict={X:x,Y:y})
                 sv.summary_computed(sess,summary_str,global_step=global_step)
-                
+                if epoch%display==0:
+                    loss=sess.run(cost,feed_dict={X:trainX,Y:trainY})
+                    if not (loss=='NA'):
+                        plotdata['batchsize'].append(epoch)
+                        plotdata['loss'].append(loss)
+        print('finished')
+        sv.saver.save(sess,)
+
+
