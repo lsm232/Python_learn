@@ -1,4 +1,4 @@
-import tensorflow as tf
+# import tensorflow as tf
 
 # a=tf.constant(1)
 # g=tf.Graph()
@@ -31,6 +31,14 @@ import tensorflow as tf
 # # print(tf.get_default_graph().get_operations())
 # # print(tf.get_default_graph().as_graph_element(c))
 
-print(tf.get_default_graph())
-with tf.Graph().as_default():
-    print(tf.get_default_graph())
+# print(tf.get_default_graph())
+# with tf.Graph().as_default():
+#     print(tf.get_default_graph())
+
+import torch
+import numpy as np
+# x=np.zeros((2,2,3))
+# x[:,:,:]=[1,2,3]
+
+x=torch.full([2,2,3],fill_value=1)
+c=1
