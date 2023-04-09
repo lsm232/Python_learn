@@ -14,7 +14,7 @@ from scipy.stats import mannwhitneyu
 #做u检验
 
 testB=r'J:\cyclegan_特征掩码\dataset\test\high'
-fake=r'J:\cyclegan_特征掩码\results\cyclegan_1117_170epoch'
+fake=r'J:\cyclegan_特征掩码\results\cyclegan_0318-1_175epoch'
 save_csv=r'J:\综述\毕业-大论文\统计学用表格\第四章'
 
 
@@ -46,8 +46,8 @@ def data_write_csv(file_name, datas):  # file_name为写入CSV文件的路径，
     print("保存文件成功，处理结束")
 
 
-data_write_csv(save_csv+'/'+fake.split('\\')[-1]+'_psnr.csv',psnr_f)
-data_write_csv(save_csv+'/'+fake.split('\\')[-1]+'_ssim.csv',ssim_f)
-data_write_csv(save_csv+'/'+fake.split('\\')[-1]+'_mae.csv',mae_f)
+# data_write_csv(save_csv+'/'+fake.split('\\')[-1]+'_psnr.csv',psnr_f)
+# data_write_csv(save_csv+'/'+fake.split('\\')[-1]+'_ssim.csv',ssim_f)
+# data_write_csv(save_csv+'/'+fake.split('\\')[-1]+'_mae.csv',mae_f)
 
 

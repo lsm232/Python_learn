@@ -12,8 +12,8 @@ from scipy.stats import mannwhitneyu
 from scipy.stats import wilcoxon
 import csv
 
-a_path=r'J:\综述\毕业-大论文\统计学用表格\第四章\cyclegan_1117_170epoch_ssim.csv'
-b_path=r'J:\综述\毕业-大论文\统计学用表格\第四章\cyclegan_1102_155epoch_ssim.csv'
+a_path=r'C:\Users\Zhu\Desktop\R\cyclegan_1117_170epoch_ssim.csv'
+b_path=r'C:\Users\Zhu\Desktop\R\cyclegan_1102_155epoch_ssim.csv'
 
 
 
