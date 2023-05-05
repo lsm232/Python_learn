@@ -5,11 +5,11 @@ from skimage.metrics import peak_signal_noise_ratio as compare_psnr
 from skimage.metrics import structural_similarity as compare_ssim
 from sklearn.metrics import mean_absolute_error as compare_mae
 
-testA=r'J:\cyclegan_特征掩码\dataset\test\low'
-testB=r'J:\cyclegan_特征掩码\dataset\test\high'
-fake=r'J:\cyclegan_特征掩码\results\cut'
+path_20=r'J:\cyclegan_特征掩码\猪蹄_泛化性测试\norm\0.20mA'
+path_70=r'J:\cyclegan_特征掩码\猪蹄_泛化性测试\norm\0.70mA'
+path_35=r'J:\cyclegan_特征掩码\猪蹄_泛化性测试\norm\0.35mA'
 
-files=os.listdir(testA)
+files=os.listdir(path_70)
 
 psnr_A=[]
 mae_A=[]
@@ -18,11 +18,12 @@ psnr_f=[]
 mae_f=[]
 ssim_f=[]
 
-for file in files:
-    A=np.asarray(Image.open(testA+'/'+file).convert('F'))
-    B=np.asarray(Image.open(testB+'/'+file).convert('F'))
-    f=np.asarray(Image.open(fake+'/'+file.split('.')[0]+'_fake.tif').convert('F'))  #cyclegan class
+for i in range(len(files)):
+    A=np.asarray(Image.open(path_20+'/0.20mA_'+str(i+1)+'.tif').convert('F'))
+    B=np.asarray(Image.open(path_70+'/0.70mA_'+str(i+1)+'.tif').convert('F'))
+    #f=np.asarray(Image.open(fake+'/'+file.split('.')[0]+'_fake.tif').convert('F'))  #cyclegan class
     #f=np.asarray(Image.open(fake+'/'+file).convert('F'))  #noise2noise class
+    f = np.asarray(Image.open(path_35 + '/0.35mA_' + str(i+1)+'.tif').convert('F'))
 
     f = np.maximum(f, 0)
 
