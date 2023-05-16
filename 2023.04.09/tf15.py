@@ -12,7 +12,8 @@ def get_ch_lable(training_file):
     return labels
 
 def get_ch_lable_v(txt_file,word_num_map,txt_label=None):
-    to_num=lambda word:word_num_map.get(word,'')
+    words_size=len(word_num_map)
+    to_num=lambda word:word_num_map.get(word,print(word))
     if txt_file!=None:
         txt_label=get_ch_lable(txt_file)
     labels_vector=list(map(to_num,txt_label))
@@ -68,12 +69,53 @@ with tf.Session() as sess:
         print(startepo)
         step=startepo
     while step<training_iters:
-        offset=random.randint(0,n_input+1)
+        if offset > (len(training_data) - end_offset):
+            offset = random.randint(0, n_input + 1)
         inwords=[[wordlabel[i]] for i in range(offset,offset+n_input)]
         inwords=np.reshape(np.array(inwords),[-1,n_input,1])
         out_onehot=np.zeros([words_size],dtype=float)
         out_onehot[wordlabel[offset+n_input]]=1.0
         out_onehot=np.reshape(out_onehot,[1,-1])
+
+        _,accs,lossval,onehot_pred=sess.run([optimizer,accuracy,loss,pred],feed_dict={x:inwords,wordy:out_onehot})
+        loss_total+=lossval
+        acc_total+=accs
+        if(step+1)%display_step==0:
+            print('iter='+str(step+1)+',avg loss='+'{:.2f}%'.format(100*acc_total/display_step))
+            acc_total=0
+            loss_total=0
+            in2=[words[wordlabel[i]] for i in range(offset,offset+n_input)]
+            out2=words[wordlabel[offset+n_input]]
+            out_pred=words[int(tf.argmax(onehot_pred,1).eval())]
+            print('%s-[%s]vs[%s]'%(in2,out2,out_pred))
+
+        step+=1
+        offset+=(n_input+1)
+    print('ok')
+    saver.save(sess, save_dir + 'lsm.cpkt', global_step=step)
+
+    while True:
+        prompt='请输入%d个字:'%n_input
+        sentence=input(prompt)
+        inputword=sentence.strip()
+        try:
+            inputword=get_ch_lable_v(None,word_num_map,inputword)
+            for i in range(32):
+                keys=np.reshape(np.array(inputword),[-1,n_input,1])
+                onehot_pred=sess.run(pred,feed_dict={x:keys})
+                onehot_pred_index=int(tf.argmax(onehot_pred,1).eval())
+                sentence="%s%s"%(sentence,words[onehot_pred_index])
+                inputword=inputword[1:]
+                inputword.append(onehot_pred_index)
+            print(sentence)
+        except:
+            print('nono')
+
+
+
+
+
+
 
         c=1
 
